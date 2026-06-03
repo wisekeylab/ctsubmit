@@ -1,0 +1,170 @@
+# Submission Strategy
+
+This document describes how ctsubmit selects CT logs and submits certificate chains to achieve a policy-compliant quorum of Signed Certificate Timestamps (SCTs).
+
+## Overview
+
+The submission pipeline has four stages:
+
+1. **Determine requirements** — how many SCTs and distinct operators are needed.
+2. **Find compatible logs** — filter the log list by temporal compatibility and chain validation.
+3. **Devise a strategy** — rank and bucket the compatible logs.
+4. **Execute submissions** — submit to logs concurrently, collect responses, and evaluate quorum.
+
+## 1. Submission Requirements (`request.go`)
+
+The caller can set explicit values for `SCTs` (total SCT count) and `Operators` (distinct operator count). When `PolicyCompliant` is true and the certificate is not a BIMI Mark Certificate, CT policy rules are enforced:
+
+| Requirement | Value |
+|---|---|
+| Minimum SCTs | 2 (or 3 if certificate validity > 180 days) |
+| Minimum distinct operators | 2 |
+| `RequireAtLeastOneRFC6962SCT` | **true** (Apple CT policy) |
+| `PreferAtLeastOneStaticSCT` | **true** (Mozilla preference) |
+
+`SCTs` is always ≥ `Operators` and both are ≥ 1.
+
+## 2. Compatible Log Selection (`compatibleLogs.go`)
+
+Starting from the appropriate base log list (Usable TLS, Usable BIMI, Test, or crt.sh Active), the following filters are applied:
+
+- **Expiry check** — if policy compliance is required, expired certificates are rejected.
+- **Temporal compatibility** — the log's temporal interval must cover the certificate's validity period.
+- **Policy state** — when policy compliance is required, only logs in the `Usable` state (and not `ReadOnly`, `Retired`, or `Rejected`) are used.
+- **Chain validation** — the certificate chain must validate to one of the log's accepted root certificates. Validation results are cached per chain/log pair.
+- **Sufficiency check** — if there are not enough compatible logs/operators to meet the requirements, submission is aborted early.
+
+## 3. Strategy (`strategy.go`)
+
+Each compatible log is placed into a `StrategyMember` struct and assigned a bucket that determines its priority. Buckets are sorted from most to least preferred:
+
+| Priority | Bucket | Meaning |
+|---|---|---|
+| Highest | `PREFERRED_BYCONFIG` | Log URL matches a configured preference regex |
+| | `NEUTRAL` | Default — no special signals |
+| | `DISPREFERRED_SLOWRESPONSES` | Recent slow response backoff in effect |
+| | `DISPREFERRED_RECENT4XX` | Recent HTTP 4xx backoff in effect |
+| | `DISPREFERRED_RECENT5XX` | Recent HTTP 5xx backoff in effect |
+| | `DISPREFERRED_RECENTTIMEOUT` | Recent timeout backoff in effect |
+| | `DISPREFERRED_RECENTBADRESPONSE` | Recent bad response backoff in effect |
+| | `DISPREFERRED_LOWUPTIME` | Low submission-endpoint uptime (24h or 90d) |
+| | `DISPREFERRED_MMDBLOWN` | STH age exceeds the log's MMD |
+| Lowest | `EXCLUDED` | Explicitly excluded by config, or no STH data available |
+
+Within each bucket, logs are randomized to distribute load. Excluded logs are never submitted to.
+
+### Dispreferal Signals
+
+- **MMD blown** — the log's latest STH timestamp is older than its Maximum Merge Delay.
+- **Low uptime** — the submission endpoint's 24-hour uptime or the lowest endpoint's 90-day uptime falls below configurable thresholds.
+- **Backoff** — a recent bad response, timeout, 4xx, 5xx, or slow response was observed. Backoff durations are configurable and respect `Retry-After` headers for 4xx/5xx responses.
+
+## 4. Submission Execution (`orchestrate.go`)
+
+### Concurrency Model
+
+The `submit()` function uses an event-driven loop with bounded concurrency:
+
+1. **Initial batch** — up to N logs are submitted to concurrently, where N equals the number of SCTs required for quorum. This ensures maximum parallelism without overshooting.
+2. **Event loop** — a central goroutine processes four event types from submission goroutines:
+   - `eventSuccess` — HTTP 200 received and response successfully unmarshalled into an `AddChainResponse`.
+   - `eventFailure` — HTTP error, non-200 status, timeout, unmarshal failure, or context cancellation.
+   - `eventTryNext` — the try-next response threshold was exceeded but the request is still in-flight.
+   - `eventSlow` — the slow-response threshold was exceeded (for metrics recording only).
+
+### Try-Next Response Handling
+
+Each submission goroutine races the HTTP request against two configurable timers:
+
+- **Try-next timer** (`submission.tryNextResponseThreshold`) — when this fires, an `eventTryNext` is sent. The coordinator starts the next eligible log, but the original submission continues running and may still succeed.
+- **Slow timer** (`submission.slowResponseThreshold`) — when this fires, an `eventSlow` is sent. This records the slow response via `monitor.RecordSlowResponse()` for future strategy dispreferal, but does **not** trigger starting a new submission.
+
+On `eventSuccess` (when quorum is not yet met) or `eventFailure`, the next eligible log is started **only** if there are no other submissions still in-flight. This avoids eagerly overshooting and instead relies on the try-next timer to stagger launches.
+
+### Quorum Evaluation
+
+After each successful response, the `quorumState` is evaluated against all requirements:
+
+| Check | Type | Behavior |
+|---|---|---|
+| `len(responses) >= SCTs` | Hard | Must collect enough total SCTs |
+| `len(operators) >= Operators` | Hard | Must have enough distinct operators |
+| `RequireAtLeastOneRFC6962SCT` | Hard | At least one SCT must come from an RFC 6962 log |
+| `PreferAtLeastOneStaticSCT` | Soft | Influences log selection order but does not block quorum |
+
+When quorum is met, the context is cancelled, all remaining in-flight and queued submissions are abandoned, and the successful responses are returned immediately.
+
+### Smart Log Skipping
+
+Before starting each subsequent log, `wouldHelp()` evaluates whether the candidate can contribute to the remaining requirements, **treating all in-flight submissions optimistically as if they will succeed**:
+
+- If more total SCTs are needed (counting in-flight as successes), any log helps.
+- If operator diversity is the gap (counting in-flight operators), only logs from a new operator help.
+- If a specific log type is required (RFC 6962) or preferred (Static), only matching logs help.
+
+Previously skipped logs are reconsidered on each call, because an in-flight request that previously made them redundant may have since failed. Logs that have already been attempted (`BeganAfter != 0`) are never reconsidered.
+
+### Error Handling and Backoff Recording
+
+Failed submissions record the appropriate backoff type in the `monitor` package, influencing future strategy decisions:
+
+| Failure | Backoff recorded |
+|---|---|
+| Network timeout | `RecordTimeout` |
+| HTTP 5xx | `Record5xxResponse` (respects `Retry-After`) |
+| HTTP 4xx | `Record4xxResponse` (respects `Retry-After`) |
+| Other HTTP errors, bad response body, unmarshal failure | `RecordBadResponse` |
+| Slow response (threshold exceeded) | `RecordSlowResponse` |
+
+### Termination
+
+- **Success** — quorum achieved; return collected `AddChainResponse` values.
+- **Failure** — all eligible logs attempted and quorum not achieved; return an error detailing how many SCTs and operators were obtained vs. required.
+
+## Configuration
+
+The following configuration values control submission behavior:
+
+| Key | Default | Description |
+|---|---|---|
+| `submission.httpTimeout` | 15s | Per-log HTTP request timeout |
+| `submission.tryNextResponseThreshold` | 500ms | Time before a log is considered slow and the next log is started |
+| `submission.slowResponseThreshold` | 2s | Time before a log is recorded as slow for metrics and backoff |
+| `strategy.backoff.badResponsePeriod` | 1m | Backoff duration after a bad response |
+| `strategy.backoff.timeoutPeriod` | 1m | Backoff duration after a timeout |
+| `strategy.backoff.default5xxPeriod` | 1m | Default backoff duration after HTTP 5xx (overridden by `Retry-After`) |
+| `strategy.backoff.default4xxPeriod` | 1m | Default backoff duration after HTTP 4xx (overridden by `Retry-After`) |
+| `strategy.backoff.slowResponsePeriod` | 1m | Backoff duration after a slow response |
+| `strategy.uptimeThreshold.submitEndpoint24h` | 95% | Minimum 24h uptime for the submission endpoint |
+| `strategy.uptimeThreshold.lowestEndpoint90d` | 99.25% | Minimum 90d uptime for the lowest endpoint |
+| `strategy.excluded.operators` | [] | Operator names to exclude entirely |
+| `strategy.excluded.logURLRegex` | [] | URL regexes to exclude logs by |
+| `strategy.preferred.operators` | [] | Operator names to prefer |
+| `strategy.preferred.logURLRegex` | [] | URL regexes to prefer logs by |
+
+## Sequence Diagram
+
+```
+Handler
+  │
+  ├─ Parse certificate
+  ├─ determineSubmissionRequirements()  →  SCTs=3, Operators=2, RequireRFC6962=true
+  ├─ determineCompatibleLogs()          →  filtered LogList
+  ├─ devizeSubmissionStrategy()         →  sorted []StrategyMember
+  │
+  └─ submit(strategy, isPrecertificate)
+       │
+       ├─ Start initial batch (N = SCTs = 3 goroutines)
+       │    ├─ Log A (RFC6962, Operator X)  ──POST──▶  ct/v1/add-pre-chain
+       │    ├─ Log B (Static, Operator Y)   ──POST──▶  ct/v1/add-pre-chain
+       │    └─ Log C (RFC6962, Operator Z)  ──POST──▶  ct/v1/add-pre-chain
+       │
+       ├─ Event loop:
+       │    ├─ Log B: eventTryNext (>500ms)  →  start Log D
+       │    ├─ Log A: eventSuccess          →  quorum: 1/3 SCTs, 1/2 ops
+       │    ├─ Log C: eventSuccess          →  quorum: 2/3 SCTs, 2/2 ops
+       │    ├─ Log B: eventSuccess (late)   →  quorum: 3/3 SCTs, 2/2 ops ✓
+       │    └─ Cancel Log D, return [A, C, B]
+       │
+       └─ Return []AddChainResponse
+```

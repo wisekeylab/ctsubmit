@@ -1,0 +1,464 @@
+openapi: 3.0.0
+info:
+  title: ctsubmit API
+  description: CT Submission Proxy
+  contact:
+    name: Rob Stradling
+    email: rob@sectigo.com
+    url: https://github.com/crtsh/ctsubmit/blob/main/README.md#about-this-project
+  license:
+    name: GNU General Public License v3.0 or later
+    url: https://spdx.org/licenses/GPL-3.0-or-later.html
+  version: 1.0.0
+
+security: []
+
+servers:
+  - url: https://ctsubm.it
+    description: Stable API server
+  - url: https://dev.ctsubm.it
+    description: Development API server
+  - url: http://localhost:8080
+    description: Local API server
+
+paths:
+  /:
+    get:
+      operationId: frontpage
+      summary: Front page
+      description: Show the front page with links to API documentation, submission webpages, log lists, and dashboards
+      tags:
+        - webpages
+      responses:
+        '200':
+          description: Front page HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Not found
+
+  /add-chain:
+    get:
+      operationId: add-chain-webpage
+      summary: Certificate submission webpage
+      description: Show a webpage for interactively submitting a Certificate
+      tags:
+        - webpages
+      responses:
+        '200':
+          description: Submission form HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Not found
+    post:
+      operationId: add-chain
+      summary: Submit a Certificate
+      description: Submit a Certificate to a set of Certificate Transparency logs
+      tags:
+        - submission
+      parameters:
+        - $ref: '#/components/parameters/ResponseFormat'
+      requestBody:
+        $ref: '#/components/requestBodies/SubmissionRequestBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/SubmissionSuccessful'
+        '400':
+          $ref: '#/components/responses/SubmissionError'
+        '503':
+          description: Request timed out
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /add-pre-chain:
+    get:
+      operationId: add-pre-chain-webpage
+      summary: Precertificate submission webpage
+      description: Show a webpage for interactively submitting a Precertificate
+      tags:
+        - webpages
+      responses:
+        '200':
+          description: Submission form HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Not found
+    post:
+      operationId: add-pre-chain
+      summary: Submit a Precertificate
+      description: Submit a Precertificate to a set of Certificate Transparency logs
+      tags:
+        - submission
+      parameters:
+        - $ref: '#/components/parameters/ResponseFormat'
+      requestBody:
+        $ref: '#/components/requestBodies/SubmissionRequestBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/SubmissionSuccessful'
+        '400':
+          $ref: '#/components/responses/SubmissionError'
+        '503':
+          description: Request timed out
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /dashboard:
+    get:
+      operationId: dashboard
+      summary: Submission dashboard
+      description: Show a dashboard of CT log submission activity
+      tags:
+        - monitoring
+      parameters:
+        - name: loglist
+          in: query
+          required: false
+          description: Which log list to display in the dashboard
+          schema:
+            type: string
+            enum:
+              - usabletls
+              - activetls
+              - testtls
+              - usablebimi
+            default: usabletls
+      responses:
+        '200':
+          description: Submission dashboard HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Invalid loglist query parameter
+
+  /usable_tls_logs.json:
+    get:
+      operationId: usable-tls-logs
+      summary: Usable TLS Logs
+      description: Return the list of Usable TLS CT logs
+      tags:
+        - log-lists
+      responses:
+        '200':
+          description: Log list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogList'
+        '404':
+          description: Not found
+
+  /active_tls_logs.json:
+    get:
+      operationId: active-tls-logs
+      summary: Active TLS Logs
+      description: Return the list of Active TLS CT logs
+      tags:
+        - log-lists
+      responses:
+        '200':
+          description: Log list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogList'
+        '404':
+          description: Not found
+
+  /test_tls_logs.json:
+    get:
+      operationId: test-tls-logs
+      summary: Test TLS Logs
+      description: Return the list of Test TLS CT logs
+      tags:
+        - log-lists
+      responses:
+        '200':
+          description: Log list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogList'
+        '404':
+          description: Not found
+
+  /usable_bimi_logs.json:
+    get:
+      operationId: usable-bimi-logs
+      summary: Usable BIMI Logs
+      description: Return the list of Usable BIMI CT logs
+      tags:
+        - log-lists
+      responses:
+        '200':
+          description: Log list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogList'
+        '404':
+          description: Not found
+
+components:
+  parameters:
+    ResponseFormat:
+      name: format
+      in: query
+      required: false
+      description: The desired response format
+      schema:
+        type: string
+        enum:
+          - html
+          - json
+        default: json
+
+  requestBodies:
+    SubmissionRequestBody:
+      description: The parameters for the submission request
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SubmissionRequest'
+
+  responses:
+    SubmissionSuccessful:
+      description: The response for the specified submission request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SubmissionResponse'
+        text/html:
+          schema:
+            type: string
+            description: HTML-formatted submission response (when format=html)
+
+    SubmissionError:
+      description: Submission request error
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+        text/html:
+          schema:
+            type: string
+            description: HTML-formatted error response (when format=html)
+
+  schemas:
+    SubmissionRequest:
+      type: object
+      required:
+        - chain
+      properties:
+        chain:
+          type: array
+          items:
+            type: string
+          description: An array of base64-encoded certificates. The first element is the end-entity certificate; the second chains to the first and so on to the last, which is either the root certificate or a certificate that chains to a known root certificate
+        policyCompliant:
+          type: boolean
+          description: If true, ensure the resulting SCT list meets the requirements of the applicable CT policies
+          default: true
+        mimics:
+          type: boolean
+          description: If true, also generate SCTs from the log mimics (see https://googlechrome.github.io/CertificateTransparency/3p_libraries.html)
+          default: false
+        testLogs:
+          type: boolean
+          description: If true, submit to Test CT logs instead of Production CT logs
+          default: false
+        operators:
+          type: integer
+          description: The minimum number of log operators from which to obtain SCTs (overridden if *policyCompliant* is true and the policies require SCTs from more log operators)
+          default: 1
+        scts:
+          type: integer
+          description: The minimum number of SCTs to obtain from CT logs (overridden if *policyCompliant* is true and the policies require more SCTs)
+          default: 1
+        requireAtLeastOneRFC6962SCT:
+          type: boolean
+          description: If true, require at least one SCT from an RFC6962 log
+          default: false
+        preferAtLeastOneStaticSCT:
+          type: boolean
+          description: If true, prefer at least one SCT from a Static CT API log
+          default: false
+        verbose:
+          type: boolean
+          description: If true, include the submission strategy in the response
+          default: false
+
+    SubmissionResponse:
+      type: object
+      required:
+        - logResponse
+      properties:
+        logResponse:
+          type: array
+          items:
+            $ref: '#/components/schemas/LogResponse'
+          description: An array of add-chain responses from logs
+        finalTBSCertB64:
+          type: string
+          description: (add-pre-chain only) TBSCertificate structure with SCT list embedded and CT poison extension removed, base64-encoded
+        ctlint:
+          type: array
+          items:
+            $ref: '#/components/schemas/CTLintFinding'
+          description: (add-pre-chain only) An array of linter findings from ctlint
+        strategy:
+          type: array
+          items:
+            $ref: '#/components/schemas/StrategyMember'
+          description: An array that describes the submission strategy (only present when verbose=true)
+
+    LogResponse:
+      type: object
+      required:
+        - sct_version
+        - id
+        - timestamp
+        - extensions
+        - signature
+      properties:
+        sct_version:
+          type: integer
+          description: The version of the SignedCertificateTimestamp structure, in decimal
+        id:
+          type: string
+          description: The log ID, base64-encoded
+        timestamp:
+          type: integer
+          description: The SCT timestamp, in decimal
+        extensions:
+          type: string
+          description: An opaque type for future expansion, base64-encoded
+        signature:
+          type: string
+          description: The SCT signature, base64-encoded
+
+    CTLintFinding:
+      type: object
+      required:
+        - finding
+        - severity
+      properties:
+        finding:
+          type: string
+          description: A textual description of the finding
+        severity:
+          $ref: '#/components/schemas/FindingSeverity'
+
+    FindingSeverity:
+      type: string
+      enum:
+        - info
+        - notice
+        - warning
+        - error
+        - bug
+        - fatal
+      description: The severity of a linter finding
+
+    StrategyMember:
+      type: object
+      properties:
+        submissionURL:
+          type: string
+          description: The log's submission URL
+        monitoringURL:
+          type: string
+          description: The log's monitoring URL
+        operator:
+          type: string
+          description: The log operator name
+        logName:
+          type: string
+          description: The log name
+        logType:
+          $ref: '#/components/schemas/LogType'
+        mmd:
+          type: integer
+          format: int32
+          description: Maximum Merge Delay, in seconds
+        bucket:
+          $ref: '#/components/schemas/Bucket'
+        dispreferredDetail:
+          type: string
+          description: Reason for dispreferring, if applicable
+        randomWeight:
+          type: integer
+          description: Random weight assigned for ordering within a bucket
+        outcome:
+          type: string
+          description: The outcome of the submission attempt
+        beganAfter:
+          type: integer
+          description: Time elapsed before this submission attempt began, in nanoseconds
+        timeTaken:
+          type: integer
+          description: Time taken for this submission attempt, in nanoseconds
+
+    LogType:
+      type: string
+      enum:
+        - RFC6962
+        - STATIC
+      description: The type of CT log API
+
+    Bucket:
+      type: string
+      enum:
+        - EXCLUDED
+        - DISPREFERRED_MMDBLOWN
+        - DISPREFERRED_LOWUPTIME
+        - DISPREFERRED_RECENTBADRESPONSE
+        - DISPREFERRED_RECENTTIMEOUT
+        - DISPREFERRED_RECENT5XX
+        - DISPREFERRED_RECENT4XX
+        - DISPREFERRED_SLOWRESPONSES
+        - NEUTRAL
+        - PREFERRED_BYCONFIG
+      description: The strategy bucket assigned to a log
+
+    LogList:
+      type: object
+      description: A CT log list in v3 format (see https://www.gstatic.com/ct/log_list/v3/log_list_schema.json)
+
+    ProblemDetails:
+      type: object
+      description: RFC 7807 Problem Details
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+
+tags:
+  - name: submission
+    description: Operations related to submitting certificates and precertificates
+  - name: log-lists
+    description: Operations related to retrieving CT log lists
+  - name: monitoring
+    description: Operations related to monitoring the submission operations
+  - name: webpages
+    description: Static webpages and assets
