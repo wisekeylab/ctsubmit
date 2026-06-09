@@ -29,6 +29,18 @@ The request body is a JSON object with the following properties:
 | `preferAtLeastOneStaticSCT` | Optional | `false` | If true, prefer at least one SCT from a Static CT API log. Automatically set to true when `policyCompliant` is true (Mozilla preference). |
 | `verbose` | Optional | `false` | If true, include the submission strategy details in the response. |
 
+### Response Configuration
+
+The following `response.*` configuration options control which fields are included in successful responses:
+
+| Option | Default | Description |
+|---|---|---|
+| `response.includeLogResponses` | `true` | Include the `logResponse` array (raw add-chain/add-pre-chain responses). |
+| `response.includeSCTList` | `false` | Include the `sctListB64` field (pre-marshaled TLS-encoded SCT list, `add-pre-chain` only). |
+| `response.produceFinalTBSCert` | `false` | Include the `finalTBSCertB64` and `ctlint` fields (`add-pre-chain` only). |
+
+Review the [Security Considerations](#security-considerations) before enabling `response.includeSCTList` and/or `response.produceFinalTBSCert`.
+
 ### Response Format
 
 The response format can be selected using the `format` query parameter or the `Accept` header:
@@ -54,7 +66,7 @@ curl -X POST https://ctsubm.it/add-chain \
 
 ### Success Response (HTTP 200)
 
-A successful response contains the collected SCTs and, for precertificate submissions, additional fields:
+A successful response contains the collected SCTs and, for precertificate submissions, may also contain additional fields:
 
 ```json
 {
@@ -67,6 +79,7 @@ A successful response contains the collected SCTs and, for precertificate submis
       "signature": "<base64-encoded signature>"
     }
   ],
+  "sctListB64": "<base64-encoded TLS-encoded SCT list>",
   "finalTBSCertB64": "<base64-encoded TBSCertificate>",
   "ctlint": [
     {
@@ -80,10 +93,30 @@ A successful response contains the collected SCTs and, for precertificate submis
 
 | Field | Presence | Description |
 |---|---|---|
-| `logResponse` | Always | Array of SCT responses from CT logs. |
-| `finalTBSCertB64` | `add-pre-chain` only | Base64-encoded TBSCertificate with the collected SCTs embedded as an SCT list extension and the CT poison extension removed. Ready for signing. |
-| `ctlint` | `add-pre-chain` only | Array of [ctlint](https://github.com/crtsh/ctlint) findings for CT policy compliance checking. |
+| `logResponse` | When `response.includeLogResponses` config is enabled (default: `true`) | Array of SCT responses from CT logs. |
+| `sctListB64` | `add-pre-chain` only, when `response.includeSCTList` config is enabled (default: `false`) | Base64-encoded TLS-encoded SCT list. Use this to construct the SCT list X.509 extension and embed it in your own TBSCertificate. |
+| `finalTBSCertB64` | `add-pre-chain` only, when `response.produceFinalTBSCert` config is enabled (default: `false`) | Base64-encoded TBSCertificate with the collected SCTs embedded as an SCT list extension and the CT poison extension removed. **WARNING:** Signing this value blindly means trusting ctsubmit with your CA's signing key output. See [Security Considerations](#security-considerations). |
+| `ctlint` | `add-pre-chain` only, when `response.produceFinalTBSCert` config is enabled (default: `false`) | Array of [ctlint](https://github.com/crtsh/ctlint) findings for CT policy compliance checking. |
 | `strategy` | When `verbose=true` | Array of strategy members showing which logs were considered, their priority buckets, and submission outcomes. |
+
+### Security Considerations
+
+By default (`response.includeLogResponses` configuration option enabled), ctsubmit returns only the individual log responses (`logResponse`). Since there have been a number of [CA incidents](https://github.com/crtsh/ctlint#why-you-need-ctlint) in the past due to mistakes made when processing log responses, ctsubmit provides two further configuration options to assist CAs:
+
+- The `response.includeSCTList` configuration option (default: `false`) enables the `sctListB64` response field.
+
+- The `response.produceFinalTBSCert` configuration option (default: `false`) enables the `finalTBSCertB64` and `ctlint` response fields.
+
+> [!CAUTION]
+> It is RECOMMENDED that the CA verifies whichever of these response fields it intends to use, so that a compromise of the ctsubmit service cannot lead to the signing of arbitrary data.
+
+For ctsubmit to remain outside a CA's trusted computing base, even if the CA is running its own instance of ctsubmit:
+
+- The CA needs to independently verify each SCT signature using the public key of the corresponding log.
+
+- The CA needs to independently construct the marshaled SCT list/extension and final TBSCertificate.
+
+As long as the SCTs are kept in the same order as in `logResponse` and the SCT list extension is the last extension in the final TBSCertificate constructed by the CA, the CA can check its work by comparing against `sctListB64` and `finalTBSCertB64` and requiring a byte-for-byte match.
 
 ### Error Response (HTTP 400)
 
@@ -154,7 +187,7 @@ The dashboard displays the following information for each log:
 
 ## CTLint Severity Levels
 
-For precertificate submissions, ctlint findings are included in the response with the following severity levels:
+For precertificate submissions where `response.produceFinalTBSCert` is enabled, [ctlint](https://github.com/crtsh/ctlint) findings are included in the response with the following severity levels:
 
 | Severity | Description |
 |---|---|
@@ -167,7 +200,7 @@ For precertificate submissions, ctlint findings are included in the response wit
 
 ## Strategy Buckets
 
-When `verbose=true`, each log in the strategy response is assigned to a bucket indicating its priority:
+When `verbose=true`, the response includes the `strategy` field, which reveals how ctsubmit prioritized each log for this request and also the response times and outcomes for each submission attempt.
 
 | Priority | Bucket | Meaning |
 |---|---|---|

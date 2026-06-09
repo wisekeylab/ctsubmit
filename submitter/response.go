@@ -8,7 +8,8 @@ type CTLintResult struct {
 }
 
 type SubmissionResponse struct {
-	LogResponse     []ctgo.AddChainResponse `json:"logResponse"`
+	LogResponse     []ctgo.AddChainResponse `json:"logResponse,omitempty"`
+	SCTListB64      string                  `json:"sctListB64,omitempty"`
 	FinalTBSCertB64 string                  `json:"finalTBSCertB64,omitempty"`
 	CTLint          []CTLintResult          `json:"ctlint,omitempty"`
 	Strategy        []StrategyMember        `json:"strategy,omitempty"`
