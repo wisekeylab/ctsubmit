@@ -16,8 +16,9 @@ import (
 )
 
 var (
-	Logger     *zap.Logger
-	ShutdownWG sync.WaitGroup
+	Logger               *zap.Logger
+	ShutdownWG           sync.WaitGroup
+	XFFUseFirstIPAddress bool
 )
 
 func InitLogger(isDevelopment bool, level string, samplingInitial int, samplingThereafter int) error {
@@ -67,19 +68,20 @@ func SetDetails(fhctx *fasthttp.RequestCtx, level zapcore.Level, msg string, err
 
 func getRealClientIP(fhctx *fasthttp.RequestCtx) string {
 	remoteAddr := fhctx.RemoteAddr().String()
-	// Split host and port - handling both IPv4 and IPv6
+	// Split host and port - handling both IPv4 and IPv6.
 	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
 		remoteAddr = host
 	}
 	if realIP := fhctx.Request.Header.Peek("X-Real-IP"); len(realIP) > 0 {
 		return utils.B2S(realIP)
-	} 
+	}
 	if xff := fhctx.Request.Header.Peek("X-Forwarded-For"); len(xff) > 0 {
 		ipAddress := strings.Split(utils.B2S(xff), ",")
-		// Index 0 represents the original client
-		return strings.TrimSpace(ipAddress[0])
+		if XFFUseFirstIPAddress {
+			return strings.TrimSpace(ipAddress[0]) // The original client's claimed IP.
+		}
+		return strings.TrimSpace(ipAddress[len(ipAddress)-1]) // The entry most likely added by a trusted proxy.
 	}
-
 	return remoteAddr
 }
 
