@@ -114,6 +114,7 @@ response:
 logging:
   isDevelopment: false          # Enable development mode logging.
   level: ""                     # Log level (debug, info, warn, error, dpanic, panic, fatal).
+  xffUseFirstIPAddress: false   # Use first (not last) X-Forwarded-For IP for client_ip logging.
 ```
 
 ### Configuration Reference
@@ -184,6 +185,7 @@ logging:
 | `logging.level` | _(empty)_ | Log level: `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal`. |
 | `logging.samplingInitial` | `MaxInt` | Log sampling: number of initial messages to log per second. Disabled by default. |
 | `logging.samplingThereafter` | `MaxInt` | Log sampling: log every Nth message after the initial burst. Disabled by default. |
+| `logging.xffUseFirstIPAddress` | `false` | When `true`, use the first `X-Forwarded-For` entry (original client's claimed IP) for `client_ip` logging. When `false`, use the last entry (most likely added by a trusted proxy). |
 
 ## Monitoring Endpoints
 
