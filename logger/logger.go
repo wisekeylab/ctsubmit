@@ -2,6 +2,7 @@ package logger
 
 import (
 	"math"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -65,14 +66,21 @@ func SetDetails(fhctx *fasthttp.RequestCtx, level zapcore.Level, msg string, err
 }
 
 func getRealClientIP(fhctx *fasthttp.RequestCtx) string {
-	remoteAddr := strings.SplitN(fhctx.RemoteAddr().String(), ":", 2)
-	if realIP := fhctx.Request.Header.Peek("X-Real-IP"); len(realIP) > 0 {
-		remoteAddr[0] = utils.B2S(realIP)
-	} else if xff := fhctx.Request.Header.Peek("X-Forwarded-For"); len(xff) > 0 {
-		ipAddress := strings.Split(utils.B2S(xff), ",")
-		remoteAddr[0] = strings.TrimSpace(ipAddress[len(ipAddress)-1])
+	remoteAddr := fhctx.RemoteAddr().String()
+	// Split host and port - handling both IPv4 and IPv6
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		remoteAddr = host
 	}
-	return remoteAddr[0]
+	if realIP := fhctx.Request.Header.Peek("X-Real-IP"); len(realIP) > 0 {
+		return utils.B2S(realIP)
+	} 
+	if xff := fhctx.Request.Header.Peek("X-Forwarded-For"); len(xff) > 0 {
+		ipAddress := strings.Split(utils.B2S(xff), ",")
+		// Index 0 represents the original client
+		return strings.TrimSpace(ipAddress[0])
+	}
+
+	return remoteAddr
 }
 
 func LogRequest(fhctx *fasthttp.RequestCtx) {
