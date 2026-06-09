@@ -35,7 +35,7 @@ func FrontPage(fhctx *fasthttp.RequestCtx) {
 	response.WriteString(`/releases" target="_blank"><DIV class="title">`)
 	response.WriteString(config.ApplicationName)
 	response.WriteString(` `)
-	response.WriteString(config.VcsRevision)
+	response.WriteString(utils.VersionString(config.CtsubmitVersion))
 	response.WriteString(`</DIV></A></TD>
       <TD style="padding-left:50px"><A href="https://`)
 	response.WriteString(utils.GetPackagePath())
@@ -47,7 +47,7 @@ func FrontPage(fhctx *fasthttp.RequestCtx) {
       <TD>
         <BR><A href="https://`)
 	response.WriteString(utils.GetPackagePath())
-	response.WriteString(`/blob/main/doc/REST_API.md" target="_blank">REST API Documentation [GitHub]</A>
+	response.WriteString(`/blob/main/docs/REST_API.md" target="_blank">REST API Documentation [GitHub]</A>
         <BR><BR><BR><B>Example webpages that use the submission REST APIs:</B>
         <UL>
           <LI><A href="/`)
