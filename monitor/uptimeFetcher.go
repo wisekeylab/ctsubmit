@@ -152,7 +152,7 @@ func fetchEndpointUptimes(csvURL string, uptimeMap map[string]*EndpointUptimes, 
 				case "tile":
 					endpointUptime.Tile = percentage
 				default:
-					logger.Logger.Info("Unknown endpoint in uptime data", zap.String("url", line[0]), zap.String("endpoint", line[1]), zap.String("percentage", line[2]))
+					logger.Logger.Warn("Unknown endpoint in uptime data", zap.String("url", line[0]), zap.String("endpoint", line[1]), zap.String("percentage", line[2]))
 				}
 
 				if percentage < endpointUptime.Lowest {

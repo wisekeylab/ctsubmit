@@ -56,15 +56,15 @@ func init() {
 	}
 }
 
-func RecordBadResponse(submissionURL string) bool {
-	logger.Logger.Info("Bad response", zap.String("url", submissionURL))
+func RecordBadResponse(submissionURL string, err error) bool {
+	logger.Logger.Warn("Bad response", zap.String("url", submissionURL), zap.Error(err))
 
 	mutexBadResponse.Lock()
 	defer mutexBadResponse.Unlock()
 
 	boBad, ok := backoffBadResponse[submissionURL]
 	if !ok {
-		logger.Logger.Warn("Bad response backoff data not found", zap.String("url", submissionURL))
+		logger.Logger.Error("Bad response backoff data not found", zap.String("url", submissionURL))
 		return false
 	}
 
@@ -77,15 +77,15 @@ func RecordBadResponse(submissionURL string) bool {
 	return true
 }
 
-func RecordTimeout(submissionURL string) bool {
-	logger.Logger.Info("Connection timeout", zap.String("url", submissionURL))
+func RecordTimeout(submissionURL string, err error) bool {
+	logger.Logger.Warn("Connection timeout", zap.String("url", submissionURL), zap.Error(err))
 
 	mutexTimeout.Lock()
 	defer mutexTimeout.Unlock()
 
 	boTimeout, ok := backoffTimeout[submissionURL]
 	if !ok {
-		logger.Logger.Warn("Timeout backoff data not found", zap.String("url", submissionURL))
+		logger.Logger.Error("Timeout backoff data not found", zap.String("url", submissionURL))
 		return false
 	}
 
@@ -99,7 +99,7 @@ func RecordTimeout(submissionURL string) bool {
 }
 
 func Record5xxResponse(submissionURL string, httpResponse *http.Response) bool {
-	logger.Logger.Info(fmt.Sprintf("HTTP %d", httpResponse.StatusCode), zap.String("url", submissionURL), zap.Int("status_code", httpResponse.StatusCode))
+	logger.Logger.Warn("HTTP server error", zap.Int("status_code", httpResponse.StatusCode), zap.String("url", submissionURL))
 
 	backoffDuration := config.Config.Strategy.Backoff.Default5xxPeriod
 	if retryAfter := parseRetryAfter(httpResponse); retryAfter > 0 {
@@ -111,7 +111,7 @@ func Record5xxResponse(submissionURL string, httpResponse *http.Response) bool {
 
 	bo5xx, ok := backoff5xx[submissionURL]
 	if !ok {
-		logger.Logger.Warn("5xx backoff data not found", zap.String("url", submissionURL))
+		logger.Logger.Error("5xx backoff data not found", zap.String("url", submissionURL))
 		return false
 	}
 
@@ -126,7 +126,7 @@ func Record5xxResponse(submissionURL string, httpResponse *http.Response) bool {
 }
 
 func Record4xxResponse(submissionURL string, httpResponse *http.Response) bool {
-	logger.Logger.Info(fmt.Sprintf("HTTP %d", httpResponse.StatusCode), zap.String("url", submissionURL), zap.Int("status_code", httpResponse.StatusCode))
+	logger.Logger.Warn("HTTP client error", zap.Int("status_code", httpResponse.StatusCode), zap.String("url", submissionURL))
 
 	backoffDuration := config.Config.Strategy.Backoff.Default4xxPeriod
 	if retryAfter := parseRetryAfter(httpResponse); retryAfter > 0 {
@@ -138,7 +138,7 @@ func Record4xxResponse(submissionURL string, httpResponse *http.Response) bool {
 
 	bo4xx, ok := backoff4xx[submissionURL]
 	if !ok {
-		logger.Logger.Warn("4xx backoff data not found", zap.String("url", submissionURL))
+		logger.Logger.Error("4xx backoff data not found", zap.String("url", submissionURL))
 		return false
 	}
 
@@ -153,14 +153,14 @@ func Record4xxResponse(submissionURL string, httpResponse *http.Response) bool {
 }
 
 func RecordSlowResponse(submissionURL string) bool {
-	logger.Logger.Info("Slow response", zap.String("url", submissionURL))
+	logger.Logger.Warn("Slow response", zap.String("url", submissionURL))
 
 	mutexSlowResponse.Lock()
 	defer mutexSlowResponse.Unlock()
 
 	boSlow, ok := backoffSlowResponse[submissionURL]
 	if !ok {
-		logger.Logger.Warn("Slow response backoff data not found", zap.String("url", submissionURL))
+		logger.Logger.Error("Slow response backoff data not found", zap.String("url", submissionURL))
 		return false
 	}
 

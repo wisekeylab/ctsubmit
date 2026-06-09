@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/crtsh/ctsubmit/logger"
 	"github.com/crtsh/ctsubmit/monitor"
 
 	json "github.com/goccy/go-json"
 	ctgo "github.com/google/certificate-transparency-go"
-)
 
-// ts returns the elapsed time since start, formatted for trace logging.
-func ts(start time.Time) string { return fmt.Sprintf("+%.6fs", time.Since(start).Seconds()) }
+	"go.uber.org/zap"
+)
 
 func (sr *SubmissionRequest) submit(strategy []StrategyMember, sha256IssuerSPKI *[sha256.Size]byte, entryType ctgo.LogEntryType, entryData []byte) ([]ctgo.AddChainResponse, []*ctgo.SignedCertificateTimestamp, error) {
 	// Determine the API path for the submission.
@@ -45,12 +45,6 @@ func (sr *SubmissionRequest) submit(strategy []StrategyMember, sha256IssuerSPKI 
 	}
 
 	start := time.Now()
-	fmt.Printf("%s [submit] eligible logs in strategy order (%d):\n", ts(start), len(eligible))
-	for order, idx := range eligible {
-		sm := strategy[idx]
-		fmt.Printf("%s [submit]   #%d strategyIdx=%d url=%s operator=%s bucket=%d logType=%v\n", ts(start), order+1, idx, sm.SubmissionURL, sm.Operator, sm.Bucket, sm.LogType)
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -78,10 +72,10 @@ func (sr *SubmissionRequest) submit(strategy []StrategyMember, sha256IssuerSPKI 
 		inFlightIndices[strategyIdx] = true
 		launchSeq++
 		strategy[strategyIdx].BeganAfter = time.Since(start)
-		fmt.Printf("%s [submit] launch #%d strategyIdx=%d url=%s operator=%s inFlight=%d\n", ts(start), launchSeq, strategyIdx, strategy[strategyIdx].SubmissionURL, strategy[strategyIdx].Operator, inFlight)
+		logger.Logger.Debug("Launching submission", zap.Int("launchSeq", launchSeq), zap.Int("strategyIdx", strategyIdx), zap.String("url", strategy[strategyIdx].SubmissionURL), zap.String("operator", strategy[strategyIdx].Operator), zap.Int("inFlight", inFlight))
 
 		go func(idx int) {
-			submitToLog(ctx, start, idx, strategy[idx].SubmissionURL, apiPath, requestBody, sha256IssuerSPKI, entryType, entryData, events)
+			submitToLog(ctx, idx, strategy[idx].SubmissionURL, apiPath, requestBody, sha256IssuerSPKI, entryType, entryData, events)
 		}(strategyIdx)
 	}
 
@@ -148,7 +142,7 @@ func (sr *SubmissionRequest) submit(strategy []StrategyMember, sha256IssuerSPKI 
 				sm := strategy[strategyIdx]
 				if needRFC6962 && sm.LogType == LOGTYPE_RFC6962 || needStatic && sm.LogType == LOGTYPE_STATIC {
 					if qs.wouldHelp(sr, sm, strategy, inFlightIndices) {
-						fmt.Printf("%s [submit] next eligible helps quorum (log type preference): strategyIdx=%d url=%s operator=%s logType=%v\n", ts(start), strategyIdx, sm.SubmissionURL, sm.Operator, sm.LogType)
+						logger.Logger.Debug("Next eligible helps quorum (log type preference)", zap.Int("strategyIdx", strategyIdx), zap.String("url", sm.SubmissionURL), zap.String("operator", sm.Operator), zap.Int("logType", int(sm.LogType)))
 						launchEligible(i)
 						return
 					}
@@ -161,7 +155,7 @@ func (sr *SubmissionRequest) submit(strategy []StrategyMember, sha256IssuerSPKI 
 			}
 			sm := strategy[strategyIdx]
 			if qs.wouldHelp(sr, sm, strategy, inFlightIndices) {
-				fmt.Printf("%s [submit] next eligible helps quorum: strategyIdx=%d url=%s operator=%s\n", ts(start), strategyIdx, sm.SubmissionURL, sm.Operator)
+				logger.Logger.Debug("Next eligible helps quorum", zap.Int("strategyIdx", strategyIdx), zap.String("url", sm.SubmissionURL), zap.String("operator", sm.Operator))
 				launchEligible(i)
 				return
 			}
@@ -184,10 +178,10 @@ func (sr *SubmissionRequest) submit(strategy []StrategyMember, sha256IssuerSPKI 
 			} else {
 				strategy[event.strategyIdx].Outcome = "Submission successful, but doesn't help quorum"
 			}
-			fmt.Printf("%s [submit] success strategyIdx=%d url=%s operator=%s scts=%d/%d operators=%d/%d inFlight=%d\n", ts(start), event.strategyIdx, strategy[event.strategyIdx].SubmissionURL, strategy[event.strategyIdx].Operator, len(qs.responses), sr.SCTs, len(qs.operators), sr.Operators, inFlight)
+			logger.Logger.Debug("Submission success", zap.Int("strategyIdx", event.strategyIdx), zap.String("url", strategy[event.strategyIdx].SubmissionURL), zap.String("operator", strategy[event.strategyIdx].Operator), zap.Int("scts", len(qs.responses)), zap.Int("sctsNeeded", sr.SCTs), zap.Int("operators", len(qs.operators)), zap.Int("operatorsNeeded", sr.Operators), zap.Int("inFlight", inFlight))
 
 			if qs.isQuorumMet(sr) {
-				fmt.Printf("%s [submit] quorum met; cancelling remaining in-flight submissions (inFlight=%d)\n", ts(start), inFlight)
+				logger.Logger.Debug("Quorum met; cancelling remaining in-flight submissions", zap.Int("inFlight", inFlight))
 				for _, indices := range []map[int]bool{inFlightIndices, slowInFlightIndices} {
 					for idx := range indices {
 						strategy[idx].Outcome = "Submission cancelled (quorum met)"
@@ -215,7 +209,7 @@ func (sr *SubmissionRequest) submit(strategy []StrategyMember, sha256IssuerSPKI 
 			delete(slowInFlightIndices, event.strategyIdx)
 			strategy[event.strategyIdx].Outcome = event.outcome
 			strategy[event.strategyIdx].TimeTaken = event.timeTaken
-			fmt.Printf("%s [submit] failure strategyIdx=%d url=%s operator=%s inFlight=%d\n", ts(start), event.strategyIdx, strategy[event.strategyIdx].SubmissionURL, strategy[event.strategyIdx].Operator, inFlight)
+			logger.Logger.Warn("Submission failure", zap.Int("strategyIdx", event.strategyIdx), zap.String("url", strategy[event.strategyIdx].SubmissionURL), zap.String("operator", strategy[event.strategyIdx].Operator), zap.Int("inFlight", inFlight))
 			if inFlight == 0 {
 				startNextEligible()
 			}
@@ -226,12 +220,12 @@ func (sr *SubmissionRequest) submit(strategy []StrategyMember, sha256IssuerSPKI 
 			// eligible log (the slow submission continues and might still succeed).
 			delete(inFlightIndices, event.strategyIdx)
 			slowInFlightIndices[event.strategyIdx] = true
-			fmt.Printf("%s [submit] try-next threshold exceeded strategyIdx=%d url=%s operator=%s; launching additional candidate\n", ts(start), event.strategyIdx, strategy[event.strategyIdx].SubmissionURL, strategy[event.strategyIdx].Operator)
+			logger.Logger.Warn("Try-next threshold exceeded; launching additional candidate", zap.Int("strategyIdx", event.strategyIdx), zap.String("url", strategy[event.strategyIdx].SubmissionURL), zap.String("operator", strategy[event.strategyIdx].Operator))
 			startNextEligible()
 
 		case eventSlow:
 			monitor.RecordSlowResponse(strategy[event.strategyIdx].SubmissionURL)
-			fmt.Printf("%s [submit] slow response strategyIdx=%d url=%s operator=%s\n", ts(start), event.strategyIdx, strategy[event.strategyIdx].SubmissionURL, strategy[event.strategyIdx].Operator)
+			logger.Logger.Warn("Slow response threshold exceeded", zap.Int("strategyIdx", event.strategyIdx), zap.String("url", strategy[event.strategyIdx].SubmissionURL), zap.String("operator", strategy[event.strategyIdx].Operator))
 		}
 	}
 

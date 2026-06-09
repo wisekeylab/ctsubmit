@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"crypto/x509"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -47,18 +48,12 @@ func init() {
 		for _, log := range operator.Logs {
 			pubKey, err := x509.ParsePKIXPublicKey(log.Key)
 			if err != nil {
-				logger.Logger.Warn("could not parse public key",
-					zap.String("url", log.URL),
-					zap.ByteString("key", log.Key),
-					zap.Error(err))
+				logger.Logger.Error("could not parse public key", zap.String("url", log.URL), zap.ByteString("key", log.Key), zap.Error(err))
 				continue
 			}
 			sigVerifier, err := ctgo.NewSignatureVerifier(pubKey)
 			if err != nil {
-				logger.Logger.Warn("could not create signature verifier",
-					zap.String("url", log.URL),
-					zap.ByteString("key", log.Key),
-					zap.Error(err))
+				logger.Logger.Error("could not create signature verifier", zap.String("url", log.URL), zap.ByteString("key", log.Key), zap.Error(err))
 				continue
 			}
 
@@ -72,19 +67,14 @@ func init() {
 
 			pubKey, err := x509.ParsePKIXPublicKey(tiledLog.Key)
 			if err != nil {
-				logger.Logger.Warn("Failed to parse static log public key",
-					zap.String("url", monitoringURL),
-					zap.ByteString("key", tiledLog.Key),
-					zap.Error(err))
+				logger.Logger.Error("Failed to parse static log public key", zap.String("url", monitoringURL), zap.ByteString("key", tiledLog.Key), zap.Error(err))
 				continue
 			}
 
 			keyName := strings.TrimRight(strings.TrimPrefix(tiledLog.SubmissionURL, "https://"), "/")
 			verifier, err := sunlight.NewRFC6962Verifier(keyName, pubKey)
 			if err != nil {
-				logger.Logger.Warn("Failed to create static log checkpoint verifier",
-					zap.String("url", monitoringURL),
-					zap.Error(err))
+				logger.Logger.Error("Failed to create static log checkpoint verifier", zap.String("url", monitoringURL), zap.ByteString("key", tiledLog.Key), zap.Error(err))
 				continue
 			}
 
@@ -127,15 +117,13 @@ func fetchSTH(logURL string, sd *STHData) {
 	var sthResponse ctgo.GetSTHResponse
 	var err error
 	if err = json.Unmarshal(body, &sthResponse); err != nil {
-		logger.Logger.Warn("Failed to unmarshal STH response", zap.String("url", logURL), zap.Error(err))
-		RecordBadResponse(sd.SubmissionURL)
+		RecordBadResponse(sd.SubmissionURL, err)
 		return
 	}
 
 	var sth *ctgo.SignedTreeHead
 	if sth, err = sthResponse.ToSignedTreeHead(); err != nil {
-		logger.Logger.Warn("ToSignedTreeHead failed", zap.String("url", logURL), zap.Error(err))
-		RecordBadResponse(sd.SubmissionURL)
+		RecordBadResponse(sd.SubmissionURL, err)
 		return
 	}
 
@@ -145,8 +133,7 @@ func fetchSTH(logURL string, sd *STHData) {
 	defer sthMutex.Unlock()
 
 	if err = sd.SigVerifier.VerifySTHSignature(*sth); err != nil {
-		logger.Logger.Warn("Invalid STH Signature", zap.String("url", logURL), zap.Time("sth_timestamp", sthTimestamp), zap.Uint64("tree_size", sthResponse.TreeSize))
-		RecordBadResponse(sd.SubmissionURL)
+		RecordBadResponse(sd.SubmissionURL, err)
 		return
 	}
 
@@ -158,10 +145,7 @@ func fetchSTH(logURL string, sd *STHData) {
 	timestamp = sthTimestamp
 	sd.Timestamp = &timestamp
 
-	logger.Logger.Debug("Fetched STH",
-		zap.String("url", logURL),
-		zap.Uint64("tree_size", sthResponse.TreeSize),
-		zap.Duration("age", time.Since(*sd.Timestamp)))
+	logger.Logger.Debug("Fetched STH", zap.String("url", logURL), zap.Uint64("tree_size", sthResponse.TreeSize), zap.Duration("age", time.Since(*sd.Timestamp)))
 }
 
 func fetchCheckpoint(submissionURL, monitoringURL string, sd *STHData) {
@@ -175,37 +159,27 @@ func fetchCheckpoint(submissionURL, monitoringURL string, sd *STHData) {
 
 	n, err := note.Open(body, sd.NoteVerifiers)
 	if err != nil {
-		logger.Logger.Warn("Failed to verify checkpoint note", zap.String("url", monitoringURL), zap.Error(err))
-		RecordBadResponse(sd.SubmissionURL)
+		RecordBadResponse(sd.SubmissionURL, err)
 		return
 	}
 	if len(n.Sigs) < 1 {
-		logger.Logger.Warn("Checkpoint note had no verified signatures", zap.String("url", monitoringURL))
-		RecordBadResponse(sd.SubmissionURL)
+		RecordBadResponse(sd.SubmissionURL, fmt.Errorf("Checkpoint note had no verified signatures"))
 		return
 	}
 
 	checkpoint, err := sunlight.ParseCheckpoint(n.Text)
 	if err != nil {
-		logger.Logger.Warn("Failed to parse checkpoint", zap.String("url", monitoringURL), zap.Error(err))
-		RecordBadResponse(sd.SubmissionURL)
+		RecordBadResponse(sd.SubmissionURL, err)
 		return
 	}
 	if checkpoint.Origin != sd.KeyName {
-		logger.Logger.Warn(
-			"Unexpected checkpoint origin",
-			zap.String("url", monitoringURL),
-			zap.String("origin", checkpoint.Origin),
-			zap.String("expected_origin", sd.KeyName),
-		)
-		RecordBadResponse(sd.SubmissionURL)
+		RecordBadResponse(sd.SubmissionURL, fmt.Errorf("Unexpected checkpoint origin: %s", checkpoint.Origin))
 		return
 	}
 
 	timestampMillis, err := sunlight.RFC6962SignatureTimestamp(n.Sigs[0])
 	if err != nil {
-		logger.Logger.Warn("Failed to parse checkpoint timestamp", zap.String("url", monitoringURL), zap.Error(err))
-		RecordBadResponse(sd.SubmissionURL)
+		RecordBadResponse(sd.SubmissionURL, err)
 		return
 	}
 
@@ -217,16 +191,13 @@ func fetchCheckpoint(submissionURL, monitoringURL string, sd *STHData) {
 	timestamp := time.UnixMilli(timestampMillis)
 	sd.Timestamp = &timestamp
 
-	logger.Logger.Debug("Fetched checkpoint",
-		zap.String("url", monitoringURL),
-		zap.Uint64("tree_size", sd.TreeSize),
-		zap.Duration("age", time.Since(*sd.Timestamp)))
+	logger.Logger.Debug("Fetched checkpoint", zap.String("url", monitoringURL), zap.Uint64("tree_size", sd.TreeSize), zap.Duration("age", time.Since(*sd.Timestamp)))
 }
 
 func fetchResource(submissionURL, endpointURL string) []byte {
 	req, err := http.NewRequest(http.MethodGet, endpointURL, nil)
 	if err != nil {
-		logger.Logger.Warn("Failed to create HTTP request", zap.String("url", endpointURL), zap.Error(err))
+		logger.Logger.Error("Failed to create HTTP request", zap.String("url", endpointURL), zap.Error(err))
 		return nil
 	}
 
@@ -234,32 +205,29 @@ func fetchResource(submissionURL, endpointURL string) []byte {
 
 	resp, err := sthHTTPClient.Do(req)
 	if err != nil {
-		logger.Logger.Warn("Failed to fetch resource", zap.String("url", endpointURL), zap.Error(err))
 		if utils.IsTimeoutError(err) {
-			RecordTimeout(submissionURL)
+			RecordTimeout(submissionURL, err)
 		} else {
-			RecordBadResponse(submissionURL)
+			RecordBadResponse(submissionURL, err)
 		}
 		return nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		logger.Logger.Warn("Unexpected HTTP status", zap.String("url", endpointURL), zap.Int("status", resp.StatusCode))
 		if resp.StatusCode >= 500 && resp.StatusCode < 600 {
 			Record5xxResponse(submissionURL, resp)
 		} else if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 			Record4xxResponse(submissionURL, resp)
 		} else {
-			RecordBadResponse(submissionURL)
+			RecordBadResponse(submissionURL, fmt.Errorf("Unexpected HTTP status: %d", resp.StatusCode))
 		}
 		return nil
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		logger.Logger.Warn("Failed to read HTTP response body", zap.String("url", endpointURL), zap.Error(err))
-		RecordBadResponse(submissionURL)
+		RecordBadResponse(submissionURL, err)
 		return nil
 	}
 
