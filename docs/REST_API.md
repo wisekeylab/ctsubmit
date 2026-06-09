@@ -1,5 +1,24 @@
 # ctsubmit: REST API Documentation
 
+Contents:
+
+- [OpenAPI](#openapi)
+- [POST Endpoints](#post-endpoints)
+  - [Request Body](#request-body)
+  - [Response Configuration](#response-configuration)
+  - [Response Format](#response-format)
+  - [Example Request](#example-request)
+  - [Success Response (HTTP 200)](#success-response-http-200)
+  - [Error Response (HTTP 400)](#error-response-http-400)
+  - [Timeout Response (HTTP 503)](#timeout-response-http-503)
+- [Security Considerations](#security-considerations)
+- [Policy-Compliant Submissions](#policy-compliant-submissions)
+- [GET Endpoints](#get-endpoints)
+  - [Web Forms](#web-forms)
+  - [Log Lists](#log-lists)
+  - [Dashboard](#dashboard)
+- [CTLint Severity Levels](#ctlint-severity-levels)
+
 ## OpenAPI
 
 An [OpenAPI](https://swagger.io/specification/) definition for ctsubmit is provided by [openapi.yaml](/docs/openapi.yaml) and rendered in HTML [here](https://crtsh.github.io/ctsubmit/openapi.html).
@@ -99,25 +118,6 @@ A successful response contains the collected SCTs and, for precertificate submis
 | `ctlint` | `add-pre-chain` only, when `response.produceFinalTBSCert` config is enabled (default: `false`) | Array of [ctlint](https://github.com/crtsh/ctlint) findings for CT policy compliance checking. |
 | `strategy` | When `verbose=true` | Array of strategy members showing which logs were considered, their priority buckets, and submission outcomes. |
 
-### Security Considerations
-
-By default (`response.includeLogResponses` configuration option enabled), ctsubmit returns only the individual log responses (`logResponse`). Since there have been a number of [CA incidents](https://github.com/crtsh/ctlint#why-you-need-ctlint) in the past due to mistakes made when processing log responses, ctsubmit provides two further configuration options to assist CAs:
-
-- The `response.includeSCTList` configuration option (default: `false`) enables the `sctListB64` response field.
-
-- The `response.produceFinalTBSCert` configuration option (default: `false`) enables the `finalTBSCertB64` and `ctlint` response fields.
-
-> [!CAUTION]
-> It is RECOMMENDED that the CA verifies whichever of these response fields it intends to use, so that a compromise of the ctsubmit service cannot lead to the signing of arbitrary data.
-
-For ctsubmit to remain outside a CA's trusted computing base, even if the CA is running its own instance of ctsubmit:
-
-- The CA needs to independently verify each SCT signature using the public key of the corresponding log.
-
-- The CA needs to independently construct the marshaled SCT list/extension and final TBSCertificate.
-
-As long as the SCTs are kept in the same order as in `logResponse` and the SCT list extension is the last extension in the final TBSCertificate constructed by the CA, the CA can check its work by comparing against `sctListB64` and `finalTBSCertB64` and requiring a byte-for-byte match.
-
 ### Error Response (HTTP 400)
 
 Error responses use [RFC 7807 Problem Details](https://www.rfc-editor.org/rfc/rfc7807):
@@ -133,6 +133,25 @@ Error responses use [RFC 7807 Problem Details](https://www.rfc-editor.org/rfc/rf
 ### Timeout Response (HTTP 503)
 
 If the request times out (exceeds `server.requestTimeout`), a `503 Service Unavailable` response is returned.
+
+## Security Considerations
+
+By default (`response.includeLogResponses` configuration option enabled), ctsubmit returns only the individual log responses (`logResponse`). Since there have been a number of [CA incidents](https://github.com/crtsh/ctlint#why-you-need-ctlint) in the past due to mistakes made when processing log responses, ctsubmit provides two further configuration options to assist CAs:
+
+- The `response.includeSCTList` configuration option (default: `false`) enables the `sctListB64` response field.
+
+- The `response.produceFinalTBSCert` configuration option (default: `false`) enables the `finalTBSCertB64` and `ctlint` response fields.
+
+> [!CAUTION]
+> It is RECOMMENDED that the CA verifies whichever of these response fields it intends to use, so that a compromise of the ctsubmit service cannot lead to the signing of arbitrary data.
+
+For ctsubmit to remain outside a CA's trusted computing base, even if the CA is running its own instance of ctsubmit:
+
+- The CA needs to independently verify each SCT signature using the public key of the corresponding log.
+
+- (`add-pre-chain` only) The CA needs to independently construct the marshaled SCT list/extension and final TBSCertificate.
+
+As long as the SCTs are kept in the same order as in `logResponse` and the SCT list extension is the last extension in the final TBSCertificate constructed by the CA, the CA can check its independent constructions by comparing against `sctListB64` and `finalTBSCertB64` and requiring a byte-for-byte match.
 
 ## Policy-Compliant Submissions
 

@@ -1,5 +1,16 @@
 # ctsubmit: Installation and Configuration
 
+Contents:
+
+- [Installation: Docker (Recommended method)](#installation-docker-recommended-method)
+- [Installation: Manual](#installation-manual)
+- [Architecture](#architecture)
+- [Configuration](#configuration)
+  - [Environment Variables](#environment-variables)
+  - [Example `config.yaml`](#example-configyaml)
+  - [Configuration Reference](#configuration-reference)
+- [Monitoring Endpoints](#monitoring-endpoints)
+
 ## Installation: Docker (Recommended method)
 
 Option 1: Use a [prebuilt ctsubmit container](https://github.com/orgs/crtsh/packages?repo_name=ctsubmit) from the GitHub Packages [Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
