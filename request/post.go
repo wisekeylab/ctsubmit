@@ -195,6 +195,20 @@ func sendHTMLResponse(fhctx *fasthttp.RequestCtx, submissionResponse *submitter.
 		}
 	}
 
+	// SCT List Extension.
+	if submissionResponse.SCTListB64 != "" {
+		h.WriteString(`<TR><TH colspan="2" style="border-bottom:1px solid #CCCCCC;border-top:2px solid #CCCCCC">SCT List Extension</TH></TR>`)
+		h.WriteString(`<TR><TD colspan="2" style="word-break:break-all">`)
+		s := submissionResponse.SCTListB64
+		for len(s) > 64 {
+			h.WriteString(html.EscapeString(s[:64]))
+			h.WriteString(`<BR>`)
+			s = s[64:]
+		}
+		h.WriteString(html.EscapeString(s))
+		h.WriteString(`</TD></TR>`)
+	}
+
 	// Final TBS Certificate.
 	if submissionResponse.FinalTBSCertB64 != "" {
 		h.WriteString(`<TR><TH colspan="2" style="border-bottom:1px solid #CCCCCC;border-top:2px solid #CCCCCC">Final TBS Certificate</TH></TR>`)

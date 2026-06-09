@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
+	"github.com/crtsh/ctsubmit/config"
 	"github.com/crtsh/ctsubmit/endpoint"
 
 	"github.com/crtsh/ccadb_data"
@@ -127,17 +128,32 @@ func Handler(fhctx *fasthttp.RequestCtx, ctx context.Context, apiEndpoint endpoi
 	}
 
 	if entryType == ctgo.PrecertLogEntryType {
-		// Generate the final TBSCertificate.
-		tbsCertificate, err := produceFinalTBSCertificate(detoxedTBSCert, sctListBytes)
-		if err != nil {
-			return nil, fmt.Errorf("Failed to generate final TBSCertificate: %v", err)
+		// Optionally include the serialized SCT list, to assist CAs in constructing the final TBSCertificate themselves.
+		// This is disabled by default; see the response.includeSCTList configuration option.
+		if config.Config.Response.IncludeSCTList {
+			submissionResponse.SCTListB64 = base64.StdEncoding.EncodeToString(sctListBytes)
 		}
 
-		// Base64-encode the final TBSCertificate for inclusion in the response.
-		submissionResponse.FinalTBSCertB64 = base64.StdEncoding.EncodeToString(tbsCertificate)
+		// Optionally generate and return the final TBSCertificate (with SCTs embedded and CT poison removed).
+		// WARNING: CAs that blindly sign this value are trusting ctsubmit with their signing key's output.
+		// This is disabled by default; see the response.produceFinalTBSCert configuration option.
+		if config.Config.Response.ProduceFinalTBSCert {
+			tbsCertificate, err := produceFinalTBSCertificate(detoxedTBSCert, sctListBytes)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to generate final TBSCertificate: %v", err)
+			}
 
-		// Evaluate CT policy compliance using ctlint, and include the linter findings in the response.
-		submissionResponse.CTLint = runCTLint(tbsCertificate)
+			// Base64-encode the final TBSCertificate for inclusion in the response.
+			submissionResponse.FinalTBSCertB64 = base64.StdEncoding.EncodeToString(tbsCertificate)
+
+			// Evaluate CT policy compliance using ctlint, and include the linter findings in the response.
+			submissionResponse.CTLint = runCTLint(tbsCertificate)
+		}
+	}
+
+	// Omit LogResponse from the response if configured.
+	if !config.Config.Response.IncludeLogResponses {
+		submissionResponse.LogResponse = nil
 	}
 
 	// If requested, include the strategy information in the response.

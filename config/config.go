@@ -66,8 +66,11 @@ type config struct {
 		HTTPTimeout     time.Duration `mapstructure:"httpTimeout"`
 	}
 	Response struct {
-		DefaultFormat   string `mapstructure:"defaultFormat"`
-		JsonPrettyPrint bool   `mapstructure:"jsonPrettyPrint"`
+		DefaultFormat       string `mapstructure:"defaultFormat"`
+		JsonPrettyPrint     bool   `mapstructure:"jsonPrettyPrint"`
+		IncludeLogResponses bool   `mapstructure:"includeLogResponses"`
+		IncludeSCTList      bool   `mapstructure:"includeSCTList"`
+		ProduceFinalTBSCert bool   `mapstructure:"produceFinalTBSCert"`
 	}
 	Logging struct {
 		IsDevelopment      bool   `mapstructure:"isDevelopment"`
@@ -155,6 +158,9 @@ func init() {
 	if Config.UptimeFetcher.HTTPTimeout <= 0 {
 		logger.Logger.Fatal("uptimeFetcher.httpTimeout must be positive")
 	}
+	if !Config.Response.IncludeLogResponses && !Config.Response.IncludeSCTList && !Config.Response.ProduceFinalTBSCert {
+		logger.Logger.Fatal("at least one of response.includeLogResponses, response.includeSCTList, response.produceFinalTBSCert must be true")
+	}
 
 	// Log build information.
 	if bi, ok := debug.ReadBuildInfo(); ok {
@@ -232,6 +238,9 @@ func initViper() error {
 	viper.SetDefault("sthMonitor.httpTimeout", 15*time.Second)
 	viper.SetDefault("uptimeFetcher.refreshInterval", 30*time.Minute)
 	viper.SetDefault("uptimeFetcher.httpTimeout", 15*time.Second)
+	viper.SetDefault("response.includeLogResponses", true)
+	viper.SetDefault("response.includeSCTList", false)
+	viper.SetDefault("response.produceFinalTBSCert", false)
 	viper.SetDefault("logging.isDevelopment", false)
 	viper.SetDefault("logging.level", "")
 	viper.SetDefault("logging.samplingInitial", math.MaxInt)    // When both of these are set to MaxInt, sampling is disabled.

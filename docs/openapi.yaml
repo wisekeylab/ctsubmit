@@ -305,22 +305,23 @@ components:
 
     SubmissionResponse:
       type: object
-      required:
-        - logResponse
       properties:
         logResponse:
           type: array
           items:
             $ref: '#/components/schemas/LogResponse'
-          description: An array of add-chain responses from logs
+          description: An array of add-chain responses from logs (requires response.includeLogResponses config, enabled by default)
+        sctListB64:
+          type: string
+          description: (add-pre-chain only, requires response.includeSCTList config, disabled by default) TLS-encoded SCT list, base64-encoded. Use this to construct the final TBSCertificate yourself.
         finalTBSCertB64:
           type: string
-          description: (add-pre-chain only) TBSCertificate structure with SCT list embedded and CT poison extension removed, base64-encoded
+          description: (add-pre-chain only, requires response.produceFinalTBSCert config, disabled by default) TBSCertificate structure with SCT list embedded and CT poison extension removed, base64-encoded. WARNING - signing this blindly means trusting ctsubmit with your CA's signing key output.
         ctlint:
           type: array
           items:
             $ref: '#/components/schemas/CTLintFinding'
-          description: (add-pre-chain only) An array of linter findings from ctlint
+          description: (add-pre-chain only, requires response.produceFinalTBSCert config, disabled by default) An array of linter findings from ctlint
         strategy:
           type: array
           items:
