@@ -67,7 +67,7 @@ func Dashboard(fhctx *fasthttp.RequestCtx) {
 	response.WriteString(`/releases" target="_blank"><DIV class="title">`)
 	response.WriteString(config.ApplicationName)
 	response.WriteString(` `)
-	response.WriteString(config.VcsRevision)
+	response.WriteString(utils.VersionString(config.CtsubmitVersion))
 	response.WriteString(`</DIV></A></TD>
       <TD style="padding-left:50px"><A href="https://`)
 	response.WriteString(utils.GetPackagePath())

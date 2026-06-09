@@ -93,6 +93,7 @@ var (
 	// Automatically populated by the build system (see Makefile / Dockerfile).
 	BuildTimestamp                              string
 	Vcs, VcsModified, VcsRevision, VcsTimestamp string
+	CtsubmitVersion                             string
 )
 
 func init() {
@@ -170,6 +171,10 @@ func init() {
 			}
 		}
 		logger.Logger.Info("Build information", zap.String("build_timestamp", BuildTimestamp), zap.String("vcs", Vcs), zap.String("vcs_modified", VcsModified), zap.String("vcs_revision", VcsRevision), zap.String("vcs_timestamp", VcsTimestamp))
+	}
+
+	if CtsubmitVersion == "" {
+		CtsubmitVersion = VcsRevision
 	}
 
 	// Log RLIMIT_NOFILE soft and hard limits.
