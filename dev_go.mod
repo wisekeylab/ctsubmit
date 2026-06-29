@@ -5,13 +5,13 @@ go 1.26.4
 require (
 	filippo.io/sunlight v0.8.0
 	github.com/crtsh/ccadb_data v1.20260626.143316
-	github.com/crtsh/ctlint v0.0.0-20260626092302-681b48af1046
+	github.com/crtsh/ctlint v0.0.0-20260629114458-a283d13cfe02
 	github.com/crtsh/ctloglists v1.20260625.180924
 	github.com/goccy/go-json v0.10.6
 	github.com/google/certificate-transparency-go v1.3.3
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/viper v1.21.0
-	github.com/valyala/fasthttp v1.71.0
+	github.com/valyala/fasthttp v1.72.0
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/mod v0.37.0
