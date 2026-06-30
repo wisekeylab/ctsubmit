@@ -1,4 +1,4 @@
-package submitter
+package pki
 
 import (
 	"bytes"
@@ -21,15 +21,15 @@ func init() {
 	}
 }
 
-func validateChain(logID [sha256.Size]byte, submissionRequest *SubmissionRequest, logTemporalInterval *loglist3.TemporalInterval) bool {
+func ValidateChain(logID [sha256.Size]byte, submittedChain [][]byte, logTemporalInterval *loglist3.TemporalInterval) bool {
 	var validateChainCacheMap map[[sha256.Size]byte]bool
 	var chainSHA256 [sha256.Size]byte
 	var chainIsValid, ok bool
 
-	if len(submissionRequest.Chain) > 1 { // Don't use the cache when there's no chain.
+	if len(submittedChain) > 1 { // Don't use the cache when there's no chain.
 		// Check if ValidateChain has already been called for this chain of CA certificates / this log.
 		validateChainCacheMap = logValidateChainCacheMap[logID]
-		chainSHA256 = sha256.Sum256(bytes.Join(submissionRequest.Chain[1:], nil))
+		chainSHA256 = sha256.Sum256(bytes.Join(submittedChain[1:], nil))
 		chainIsValid, ok = validateChainCacheMap[chainSHA256]
 	}
 
@@ -42,9 +42,9 @@ func validateChain(logID [sha256.Size]byte, submissionRequest *SubmissionRequest
 				end = &logTemporalInterval.EndExclusive
 			}
 			cvo := ctfe.NewCertValidationOpts(ctloglists.AcceptedRootsMap[ll], time.Now(), false, false, start, end, false, nil)
-			_, err := ctfe.ValidateChain(submissionRequest.Chain, cvo)
+			_, err := ctfe.ValidateChain(submittedChain, cvo)
 			chainIsValid = (err == nil)
-			if len(submissionRequest.Chain) > 1 {
+			if len(submittedChain) > 1 {
 				validateChainCacheMap[chainSHA256] = chainIsValid
 			}
 		}

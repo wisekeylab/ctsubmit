@@ -1,4 +1,4 @@
-package submitter
+package pki
 
 import (
 	"crypto/ecdsa"
@@ -58,7 +58,7 @@ func fromHexString(base16 string) *big.Int {
 	return i
 }
 
-func generateMimicSCTs(detoxedTBSCert []byte, sha256IssuerSPKI [sha256.Size]byte) ([]*ctgo.SignedCertificateTimestamp, error) {
+func GenerateMimicSCTs(detoxedTBSCert []byte, sha256IssuerSPKI [sha256.Size]byte) ([]*ctgo.SignedCertificateTimestamp, error) {
 	timestamp := uint64(time.Now().UnixMilli())
 
 	sct1, err := buildMimicSCT(mimic1LogID, mimic1PrivateKey, timestamp, sha256IssuerSPKI, detoxedTBSCert)

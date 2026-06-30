@@ -39,6 +39,7 @@ The request body is a JSON object with the following properties:
 | Name | Required? | Default | Description |
 |---|---|---|---|
 | `chain` | Required | — | An array of base64-encoded DER certificates. The first element is the end-entity certificate; subsequent elements chain to the previous and so on to the root or a certificate that chains to a known root certificate. |
+| `discoverChain` | Optional | `false` | If true, attempt to discover and append missing intermediate CA certificates to the submitted chain. Uses precomputed optimal parent data (derived from CCADB) to extend the chain from the last submitted certificate up to (but not including) a trusted root. This is useful when submitting a leaf certificate without knowing which intermediates to include. |
 | `policyCompliant` | Optional | `true` | If true, ensure the resulting SCT list meets the requirements of the applicable CT policies. |
 | `testLogs` | Optional | `false` | If true, submit to test CT logs instead of production CT logs. |
 | `mimics` | Optional | `false` | If true, also generate SCTs from the [log mimics](https://googlechrome.github.io/CertificateTransparency/3p_libraries.html). |

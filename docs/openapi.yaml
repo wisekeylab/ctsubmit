@@ -270,6 +270,10 @@ components:
           items:
             type: string
           description: An array of base64-encoded certificates. The first element is the end-entity certificate; the second chains to the first and so on to the last, which is either the root certificate or a certificate that chains to a known root certificate
+        discoverChain:
+          type: boolean
+          description: If true, attempt to discover and append missing intermediate CA certificates to the submitted chain using precomputed optimal parent data derived from CCADB
+          default: false
         policyCompliant:
           type: boolean
           description: If true, ensure the resulting SCT list meets the requirements of the applicable CT policies

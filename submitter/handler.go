@@ -8,6 +8,7 @@ import (
 
 	"github.com/crtsh/ctsubmit/config"
 	"github.com/crtsh/ctsubmit/endpoint"
+	"github.com/crtsh/ctsubmit/pki"
 
 	"github.com/crtsh/ccadb_data"
 	ctgo "github.com/google/certificate-transparency-go"
@@ -29,25 +30,10 @@ func Handler(fhctx *fasthttp.RequestCtx, ctx context.Context, apiEndpoint endpoi
 		return nil, fmt.Errorf("Failed to parse first certificate: %v", err)
 	}
 
-	// Compute or lookup the issuer certificate's SPKI SHA-256 hash.
-	var sha256IssuerSPKI *[sha256.Size]byte
-	if len(submissionRequest.Chain) > 1 {
-		issuer, err := x509.ParseCertificate(submissionRequest.Chain[1])
-		if err != nil {
-			return nil, fmt.Errorf("Failed to parse issuer certificate: %v", err)
-		}
-		hash := sha256.Sum256(issuer.RawSubjectPublicKeyInfo)
-		sha256IssuerSPKI = &hash
-	} else {
-		if hash, found := ccadb_data.GetIssuerSPKISHA256ByKeyIdentifier(base64.StdEncoding.EncodeToString(cert.AuthorityKeyId)); found {
-			sha256IssuerSPKI = &hash
-		}
-	}
-
 	// Ensure appropriate input for add-chain vs add-pre-chain.
 	var entryType ctgo.LogEntryType
 	var entryData []byte
-	var detoxedTBSCert *TBSCertificate
+	var detoxedTBSCert *pki.TBSCertificate
 	if cert.IsPrecertificate() {
 		if apiEndpoint == endpoint.ENDPOINT_ADDCHAIN {
 			return nil, fmt.Errorf("Precertificate submitted to add-chain endpoint")
@@ -56,7 +42,7 @@ func Handler(fhctx *fasthttp.RequestCtx, ctx context.Context, apiEndpoint endpoi
 		entryType = ctgo.PrecertLogEntryType
 
 		// Remove the CT Poison extension from the precertificate to produce the "detoxed" TBSCertificate.
-		if detoxedTBSCert, err = detoxTBSCertificateFromPrecertificate(cert.Raw); err != nil {
+		if detoxedTBSCert, err = pki.DetoxTBSCertificateFromPrecertificate(cert.Raw); err != nil {
 			return nil, fmt.Errorf("Failed to detox precertificate: %v", err)
 		}
 
@@ -78,6 +64,13 @@ func Handler(fhctx *fasthttp.RequestCtx, ctx context.Context, apiEndpoint endpoi
 	// Determine which base log list to use for this submission request, and how many SCTs from how many log operators are required.
 	baseLogList := submissionRequest.determineSubmissionRequirements(cert)
 
+	// If requested, automatically discover the (rest of the) certificate chain.
+	if submissionRequest.DiscoverChain {
+		if discoveredChain := pki.DiscoverChain(submissionRequest.Chain, baseLogList); discoveredChain != nil {
+			submissionRequest.Chain = discoveredChain
+		}
+	}
+
 	// Determine which logs from the base log list are compatible with the certificate and submission request.
 	compatibleLogList, err := determineCompatibleLogs(cert, submissionRequest, baseLogList)
 	if err != nil {
@@ -86,6 +79,21 @@ func Handler(fhctx *fasthttp.RequestCtx, ctx context.Context, apiEndpoint endpoi
 
 	// Strategize which logs to attempt submission to, in which order.
 	strategy := devizeSubmissionStrategy(compatibleLogList, entryType)
+
+	// Compute or lookup the issuer certificate's SPKI SHA-256 hash.
+	var sha256IssuerSPKI *[sha256.Size]byte
+	if len(submissionRequest.Chain) > 1 {
+		issuer, err := x509.ParseCertificate(submissionRequest.Chain[1])
+		if err != nil {
+			return nil, fmt.Errorf("Failed to parse issuer certificate: %v", err)
+		}
+		hash := sha256.Sum256(issuer.RawSubjectPublicKeyInfo)
+		sha256IssuerSPKI = &hash
+	} else {
+		if hash, found := ccadb_data.GetIssuerSPKISHA256ByKeyIdentifier(base64.StdEncoding.EncodeToString(cert.AuthorityKeyId)); found {
+			sha256IssuerSPKI = &hash
+		}
+	}
 
 	// Submit to the logs.
 	submissionResponse := &SubmissionResponse{}
@@ -97,7 +105,7 @@ func Handler(fhctx *fasthttp.RequestCtx, ctx context.Context, apiEndpoint endpoi
 
 	// If requested, generate mimic SCTs.
 	if submissionRequest.Mimics && sha256IssuerSPKI != nil {
-		mimicSCTs, err := generateMimicSCTs(entryData, *sha256IssuerSPKI)
+		mimicSCTs, err := pki.GenerateMimicSCTs(entryData, *sha256IssuerSPKI)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to generate mimic SCTs: %v", err)
 		}
@@ -122,7 +130,7 @@ func Handler(fhctx *fasthttp.RequestCtx, ctx context.Context, apiEndpoint endpoi
 	}
 
 	// Encode the final SCT list.
-	sctListBytes, err := marshalSCTList(scts)
+	sctListBytes, err := pki.MarshalSCTList(scts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal SCT list: %w", err)
 	}
@@ -138,7 +146,7 @@ func Handler(fhctx *fasthttp.RequestCtx, ctx context.Context, apiEndpoint endpoi
 		// WARNING: CAs that blindly sign this value are trusting ctsubmit with their signing key's output.
 		// This is disabled by default; see the response.produceFinalTBSCert configuration option.
 		if config.Config.Response.ProduceFinalTBSCert {
-			tbsCertificate, err := produceFinalTBSCertificate(detoxedTBSCert, sctListBytes)
+			tbsCertificate, err := pki.ProduceFinalTBSCertificate(detoxedTBSCert, sctListBytes)
 			if err != nil {
 				return nil, fmt.Errorf("Failed to generate final TBSCertificate: %v", err)
 			}

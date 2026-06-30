@@ -3,13 +3,15 @@ package submitter
 import (
 	"fmt"
 
+	"github.com/crtsh/ctsubmit/pki"
+
 	"github.com/crtsh/ctlint"
 )
 
 func runCTLint(tbsCertificate []byte) []CTLintResult {
 	var lres []CTLintResult
 
-	dummyCert, err := makeDummyCertificate(tbsCertificate)
+	dummyCert, err := pki.MakeDummyCertificate(tbsCertificate)
 	if err != nil {
 		lres = append(lres, CTLintResult{
 			Finding:  fmt.Sprintf("Failed to create dummy certificate: %v", err),

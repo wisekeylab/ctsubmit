@@ -1,4 +1,4 @@
-package submitter
+package pki
 
 import (
 	ctgo "github.com/google/certificate-transparency-go"
@@ -6,7 +6,7 @@ import (
 	"github.com/google/certificate-transparency-go/x509util"
 )
 
-func marshalSCTList(scts []*ctgo.SignedCertificateTimestamp) ([]byte, error) {
+func MarshalSCTList(scts []*ctgo.SignedCertificateTimestamp) ([]byte, error) {
 	sctList, err := x509util.MarshalSCTsIntoSCTList(scts)
 	if err != nil {
 		return nil, err

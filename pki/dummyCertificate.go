@@ -1,4 +1,4 @@
-package submitter
+package pki
 
 import (
 	"math/big"
@@ -14,7 +14,7 @@ type tbsCertificatePartial struct {
 	SignatureAlgorithm pkix.AlgorithmIdentifier
 }
 
-func makeDummyCertificate(tbsCertificate []byte) (*x509.Certificate, error) {
+func MakeDummyCertificate(tbsCertificate []byte) (*x509.Certificate, error) {
 	// Decode enough of the TBSCertificate to discover the signature algorithm.
 	var tbs tbsCertificatePartial
 	var err error

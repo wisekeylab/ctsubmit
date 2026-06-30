@@ -14,6 +14,7 @@ import (
 
 type SubmissionRequest struct {
 	ctgo.AddChainRequest
+	DiscoverChain               bool `json:"discoverChain,omitempty"`
 	PolicyCompliant             bool `json:"policyCompliant,omitempty"`
 	Mimics                      bool `json:"mimics,omitempty"`
 	TestLogs                    bool `json:"testLogs,omitempty"`
