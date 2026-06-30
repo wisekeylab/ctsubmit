@@ -57,7 +57,8 @@ func APIWebpage(fhctx *fasthttp.RequestCtx, endpointPath string) {
 	}
 	response.WriteString(inputType)
 	response.WriteString(` Chain (PEM):</B>
-          <BR><TEXTAREA id="pemInput" cols="74" rows="36" autofocus autoCorrect="off" autoCapitalize="off" spellCheck="false" placeholder="Paste one or more PEM certificates forming a chain (`)
+          <BR><TEXTAREA id="pemInput" cols="74" rows="36" autofocus autoCorrect="off" autoCapitalize="off" spellCheck="false" placeholder="Paste one or more PEM certificates forming a full or partial chain
+(`)
 	response.WriteString(firstItem)
 	response.WriteString(` first)"></TEXTAREA>
         </TD>
