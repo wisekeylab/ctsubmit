@@ -1,4 +1,4 @@
-package submitter
+package pki
 
 import (
 	"github.com/google/certificate-transparency-go/asn1"

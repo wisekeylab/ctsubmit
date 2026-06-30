@@ -75,7 +75,11 @@ func APIWebpage(fhctx *fasthttp.RequestCtx, endpointPath string) {
         <TD><B>Options:</B>
           <BR><TABLE style="font-size:10pt;margin-left:0">
             <TR>
-			  <TD><INPUT type="checkbox" id="policyCompliant" checked onchange="if(this.checked){document.getElementById('testLogs').checked=false;document.getElementById('requireAtLeastOneRFC6962SCT').checked=true;document.getElementById('preferAtLeastOneStaticSCT').checked=true}"> Require policy-compliant SCT list?</TD>
+              <TD><INPUT type="checkbox" id="discoverChain" checked> Discover certificate chain?</TD>
+              <TD>&nbsp;</TD>
+            </TR>
+            <TR>
+              <TD><INPUT type="checkbox" id="policyCompliant" checked onchange="if(this.checked){document.getElementById('testLogs').checked=false;document.getElementById('requireAtLeastOneRFC6962SCT').checked=true;document.getElementById('preferAtLeastOneStaticSCT').checked=true}"> Require policy-compliant SCT list?</TD>
               <TD style="padding-left:20px"><INPUT type="checkbox" id="requireAtLeastOneRFC6962SCT" checked onchange="if(!this.checked)document.getElementById('policyCompliant').checked=false"> Require ≥1 RFC6962 SCT?</TD>
             </TR>
             <TR>
@@ -138,6 +142,7 @@ func APIWebpage(fhctx *fasthttp.RequestCtx, endpointPath string) {
     };
     xhr.send(JSON.stringify({
       chain: chain,
+      discoverChain: document.getElementById("discoverChain").checked,
       policyCompliant: document.getElementById("policyCompliant").checked,
       mimics: document.getElementById("mimics").checked,
       testLogs: document.getElementById("testLogs").checked,

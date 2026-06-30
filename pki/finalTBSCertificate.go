@@ -1,4 +1,4 @@
-package submitter
+package pki
 
 import (
 	"fmt"
@@ -33,7 +33,7 @@ type certificate struct {
 	SignatureValue     asn1.BitString
 }
 
-func detoxTBSCertificateFromPrecertificate(precertificate []byte) (*TBSCertificate, error) {
+func DetoxTBSCertificateFromPrecertificate(precertificate []byte) (*TBSCertificate, error) {
 	var c certificate
 	rest, err := asn1.Unmarshal(precertificate, &c)
 	if err != nil {
@@ -62,7 +62,7 @@ func detoxTBSCertificateFromPrecertificate(precertificate []byte) (*TBSCertifica
 	return &c.TBSCertificate, nil
 }
 
-func produceFinalTBSCertificate(detoxedTBSCert *TBSCertificate, sctList []byte) ([]byte, error) {
+func ProduceFinalTBSCertificate(detoxedTBSCert *TBSCertificate, sctList []byte) ([]byte, error) {
 	// Encode the SCT List extension.
 	sctListEncoded, err := asn1.Marshal(asn1.RawValue{
 		Tag:   asn1.TagOctetString,

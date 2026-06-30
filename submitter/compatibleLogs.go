@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/crtsh/ctsubmit/pki"
+
 	"github.com/google/certificate-transparency-go/logid"
 	"github.com/google/certificate-transparency-go/loglist3"
 	"github.com/google/certificate-transparency-go/x509"
@@ -46,7 +48,7 @@ func determineCompatibleLogs(cert *x509.Certificate, submissionRequest *Submissi
 					continue
 				}
 			}
-			if validateChain(logID, submissionRequest, log.TemporalInterval) {
+			if pki.ValidateChain(logID, submissionRequest.Chain, log.TemporalInterval) {
 				op.Logs = append(op.Logs, log)
 				totalLogs++
 			}
@@ -65,7 +67,7 @@ func determineCompatibleLogs(cert *x509.Certificate, submissionRequest *Submissi
 					continue
 				}
 			}
-			if validateChain(logID, submissionRequest, tiledLog.TemporalInterval) {
+			if pki.ValidateChain(logID, submissionRequest.Chain, tiledLog.TemporalInterval) {
 				op.TiledLogs = append(op.TiledLogs, tiledLog)
 				totalLogs++
 			}

@@ -43,9 +43,7 @@ func main() {
 
 	// Build index by SubjectKeyId (hex-encoded).
 	certsBySKI := make(map[string][]*certInfo)
-	certsByHash := make(map[[sha256.Size]byte]*certInfo)
 	for _, ci := range allCerts {
-		certsByHash[ci.sha256] = ci
 		if len(ci.cert.SubjectKeyId) > 0 {
 			ski := hex.EncodeToString(ci.cert.SubjectKeyId)
 			certsBySKI[ski] = append(certsBySKI[ski], ci)
@@ -92,101 +90,119 @@ func main() {
 		fmt.Printf("Context %q: %d logs in %d root groups\n", contextNames[i], total, len(contextLogGroups[i]))
 	}
 
-	// Step 3 & 4: For each certificate, find optimal chains and record results.
+	// Step 3 & 4: For each unique SKI (potential parent key), find the optimal cert to include as parent.
 	type row struct {
-		certHash string
-		parents  [4]string
+		ski     string
+		parents [4]string
 	}
-	rows := make([]row, 0, len(allCerts))
+	rows := make([]*row, 0, len(certsBySKI))
+	skiCount := 0
 
-	for idx, ci := range allCerts {
-		if (idx+1)%1000 == 0 || idx+1 == len(allCerts) {
-			fmt.Printf("\rProcessing certificate %d/%d...", idx+1, len(allCerts))
+	for ski, candidates := range certsBySKI {
+		skiCount++
+		if skiCount%100 == 0 || skiCount == len(certsBySKI) {
+			fmt.Printf("\rProcessing SKI group %d/%d...", skiCount, len(certsBySKI))
 		}
 
-		chains := buildChains(ci, certsBySKI)
-
-		r := row{
-			certHash: strings.ToUpper(hex.EncodeToString(ci.sha256[:])),
+		r := &row{
+			ski: strings.ToUpper(ski),
 		}
 
 		for ctxIdx, groups := range contextLogGroups {
-			var bestScore, bestLen int
+			var bestScore int
+			var bestChainLen int
 			var bestNotAfter time.Time
-			var bestParentHash [sha256.Size]byte
+			var bestCertHash [sha256.Size]byte
 			hasResult := false
 
-			for _, chain := range chains {
-				if len(chain) < 2 {
-					continue // No parent in this chain.
+			for _, ci := range candidates {
+				// For self-signed roots, the "chain" is just the root itself (length 1).
+				// For intermediates, build chains upward to find accepted roots.
+				var chains [][][]byte
+				if isSelfSigned(ci) {
+					chains = [][][]byte{{ci.raw}}
+				} else {
+					chains = buildChains(ci, certsBySKI)
 				}
 
-				// Check if the chain's root is in each accepted roots pool.
-				rootHash := sha256.Sum256(chain[len(chain)-1])
+				for _, chain := range chains {
+					// Check if the chain's root is in each accepted roots pool.
+					rootHash := sha256.Sum256(chain[len(chain)-1])
 
-				score := 0
-				for _, g := range groups {
-					if rootHashSets[g.rootsHash][rootHash] {
-						score += g.count
-					}
-				}
-
-				if score > 0 {
-					parentHash := sha256.Sum256(chain[1])
-					var parentNotAfter time.Time
-					if pi, ok := certsByHash[parentHash]; ok {
-						parentNotAfter = pi.cert.NotAfter
+					score := 0
+					for _, g := range groups {
+						if rootHashSets[g.rootsHash][rootHash] {
+							score += g.count
+						}
 					}
 
-					if !hasResult || score > bestScore || (score == bestScore && len(chain) < bestLen) || (score == bestScore && len(chain) == bestLen && parentNotAfter.After(bestNotAfter)) || (score == bestScore && len(chain) == bestLen && parentNotAfter.Equal(bestNotAfter) && bytes.Compare(parentHash[:], bestParentHash[:]) < 0) {
+					if score > 0 {
+						switch {
+						case !hasResult, score > bestScore:
+						case score < bestScore:
+							continue
+						case len(chain) < bestChainLen:
+						case len(chain) > bestChainLen:
+							continue
+						case ci.cert.NotAfter.After(bestNotAfter):
+						case ci.cert.NotAfter.Before(bestNotAfter):
+							continue
+						case bytes.Compare(ci.sha256[:], bestCertHash[:]) < 0:
+						default:
+							continue
+						}
 						bestScore = score
-						bestLen = len(chain)
-						bestNotAfter = parentNotAfter
-						bestParentHash = parentHash
+						bestChainLen = len(chain)
+						bestNotAfter = ci.cert.NotAfter
+						bestCertHash = ci.sha256
 						hasResult = true
 					}
 				}
 			}
 
-			if hasResult && bestLen >= 3 {
-				r.parents[ctxIdx] = strings.ToUpper(hex.EncodeToString(bestParentHash[:]))
+			if hasResult {
+				r.parents[ctxIdx] = strings.ToUpper(hex.EncodeToString(bestCertHash[:]))
 			}
 		}
 
-		rows = append(rows, r)
+		// Only include rows that have at least one parent.
+		hasAnyParent := false
+		for _, p := range r.parents {
+			if p != "" {
+				hasAnyParent = true
+				break
+			}
+		}
+		if hasAnyParent {
+			rows = append(rows, r)
+		}
 	}
 	fmt.Println()
 
-	// Sort by certificate SHA-256 hash.
+	// Sort rows by SKI.
 	sort.Slice(rows, func(i, j int) bool {
-		return rows[i].certHash < rows[j].certHash
+		return rows[i].ski < rows[j].ski
 	})
 
 	// Write CSV output.
-	if err := os.MkdirAll("data", 0755); err != nil {
-		log.Fatalf("Failed to create data directory: %v", err)
-	}
-	outputPath := filepath.Join("data", "optimal_parents.csv")
-	f, err := os.Create(outputPath)
+	f, err := os.Create("optimal_parents.csv")
 	if err != nil {
 		log.Fatalf("Failed to create output file: %v", err)
 	}
 	defer f.Close()
 
 	w := csv.NewWriter(f)
-	w.Write([]string{"Certificate", "Parent (Usable TLS)", "Parent (Active TLS)", "Parent (Test TLS)", "Parent (Usable BIMI)"})
+	w.Write([]string{"Authority Key Identifier", "Parent (Usable TLS)", "Parent (Active TLS)", "Parent (Test TLS)", "Parent (Usable BIMI)"})
 	for _, r := range rows {
-		w.Write([]string{r.certHash, r.parents[0], r.parents[1], r.parents[2], r.parents[3]})
+		w.Write([]string{r.ski, r.parents[0], r.parents[1], r.parents[2], r.parents[3]})
 	}
 	w.Flush()
 	if err := w.Error(); err != nil {
 		log.Fatalf("Failed to write CSV: %v", err)
 	}
 
-	fmt.Printf("Wrote %d rows to %s\n", len(rows), outputPath)
+	fmt.Printf("Wrote %d rows to optimal_parents.csv\n", len(rows))
 }
-
-// loadCCADBCerts reads all PEM certificates from the ccadb_data module's cmd/ski_spki/data directory.
 func loadCCADBCerts() []*certInfo {
 	dataDir := filepath.Join(getCcadbDataDir(), "cmd", "ski_spki", "data")
 	entries, err := os.ReadDir(dataDir)
@@ -242,43 +258,58 @@ func loadCCADBCerts() []*certInfo {
 	return certs
 }
 
-// buildChains returns all possible chains from the given certificate through
-// intermediate CA certificates to a self-signed root. Each chain is a slice
-// of DER-encoded certificates. Returns nil for self-signed (root) certificates.
+// buildChains returns the shortest chain from the given certificate to each
+// reachable self-signed root, deduplicated by root hash. Uses BFS to guarantee
+// shortest-first discovery, avoiding the combinatorial explosion of enumerating
+// all possible paths through cross-certified intermediates.
+// Returns nil for self-signed (root) certificates.
 func buildChains(ci *certInfo, certsBySKI map[string][]*certInfo) [][][]byte {
 	if isSelfSigned(ci) {
 		return nil
 	}
-	return buildChainsHelper(ci, certsBySKI, make(map[[sha256.Size]byte]bool))
-}
 
-func buildChainsHelper(ci *certInfo, certsBySKI map[string][]*certInfo, visited map[[sha256.Size]byte]bool) [][][]byte {
-	visited[ci.sha256] = true
-	defer delete(visited, ci.sha256)
+	// BFS state: each node is a certInfo with the path (as DER slices) that reached it.
+	type bfsNode struct {
+		ci   *certInfo
+		path [][]byte // DER certs from ci (the starting cert) through to this node.
+	}
 
-	parents := findParents(ci, certsBySKI)
+	queue := []bfsNode{{ci: ci, path: [][]byte{ci.raw}}}
+	visited := map[[sha256.Size]byte]bool{ci.sha256: true}
+	seenRoots := map[[sha256.Size]byte]bool{} // Deduplicate by root cert hash.
 
 	var chains [][][]byte
-	for _, parent := range parents {
-		if visited[parent.sha256] {
-			continue
-		}
-		if isSelfSigned(parent) {
-			// Parent is a root; chain ends here.
-			chains = append(chains, [][]byte{ci.raw, parent.raw})
-		} else {
-			// Recursively build chains through this parent.
-			for _, pc := range buildChainsHelper(parent, certsBySKI, visited) {
-				chain := make([][]byte, 0, len(pc)+1)
-				chain = append(chain, ci.raw)
-				chain = append(chain, pc...)
-				chains = append(chains, chain)
+
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
+
+		for _, parent := range findParents(node.ci, certsBySKI) {
+			if visited[parent.sha256] {
+				continue
 			}
+
+			newPath := make([][]byte, len(node.path)+1)
+			copy(newPath, node.path)
+			newPath[len(node.path)] = parent.raw
+
+			if isSelfSigned(parent) {
+				rootHash := parent.sha256
+				if !seenRoots[rootHash] {
+					seenRoots[rootHash] = true
+					chains = append(chains, newPath)
+				}
+				// Don't enqueue roots; they're terminal.
+				continue
+			}
+
+			visited[parent.sha256] = true
+			queue = append(queue, bfsNode{ci: parent, path: newPath})
 		}
 	}
 
 	if len(chains) == 0 {
-		// No parent found; chain is just this cert.
+		// No root found; return a single-element chain.
 		chains = [][][]byte{{ci.raw}}
 	}
 
