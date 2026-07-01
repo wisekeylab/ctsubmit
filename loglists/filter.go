@@ -7,13 +7,30 @@ import (
 	"strings"
 	"time"
 
+	"github.com/crtsh/ctsubmit/config"
+
 	"github.com/crtsh/ctloglists"
 	"github.com/google/certificate-transparency-go/loglist3"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"golang.org/x/mod/semver"
 )
 
 var UsableTLSLogs, ActiveTLSLogs, TestTLSLogs, UsableBIMILogs *loglist3.LogList
+
+var _ = promauto.NewGaugeFunc(prometheus.GaugeOpts{
+	Namespace: config.ApplicationNamespace,
+	Subsystem: "loglist",
+	Name:      "oldest_timestamp_age_seconds",
+	Help:      "Age in seconds of the oldest log list timestamp among lists with a 70-day enforcement cut-off.",
+}, func() float64 {
+	oldest := ctloglists.OldestTimestampForLogListWithEnforcementCutOff()
+	if oldest.IsZero() {
+		return 0
+	}
+	return time.Since(oldest).Seconds()
+})
 
 func init() {
 	ctloglists.LoadAcceptedRoots()
