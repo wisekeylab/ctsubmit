@@ -40,8 +40,8 @@ func determineCompatibleLogs(cert *x509.Certificate, submissionRequest *Submissi
 				continue
 			}
 
-			// When CT policy compliance is required, we may only use SCTs from logs that are currently Usable.
-			if submissionRequest.PolicyCompliant {
+			// When CT policy compliance is required (without test logs), we may only use SCTs from logs that are currently Usable.
+			if submissionRequest.PolicyCompliant && !submissionRequest.TestLogs {
 				if log.State == nil || log.State.Usable == nil || log.State.Usable.Timestamp.After(time.Now()) {
 					continue
 				} else if log.State.ReadOnly != nil || log.State.Retired != nil || log.State.Rejected != nil {
@@ -59,8 +59,8 @@ func determineCompatibleLogs(cert *x509.Certificate, submissionRequest *Submissi
 			if err != nil {
 				return nil, fmt.Errorf("Failed to parse log ID: %v", err)
 			}
-			// When CT policy compliance is required, we may only use SCTs from logs that are currently Usable.
-			if submissionRequest.PolicyCompliant {
+			// When CT policy compliance is required (without test logs), we may only use SCTs from logs that are currently Usable.
+			if submissionRequest.PolicyCompliant && !submissionRequest.TestLogs {
 				if tiledLog.State == nil || tiledLog.State.Usable == nil || tiledLog.State.Usable.Timestamp.After(time.Now()) {
 					continue
 				} else if tiledLog.State.ReadOnly != nil || tiledLog.State.Retired != nil || tiledLog.State.Rejected != nil {
