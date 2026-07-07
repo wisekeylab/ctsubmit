@@ -15,8 +15,8 @@ import (
 var LogID_Daedalus = [sha256.Size]byte{0x1d, 0x02, 0x4b, 0x8e, 0xb1, 0x49, 0x8b, 0x34, 0x4d, 0xfd, 0x87, 0xea, 0x3e, 0xfc, 0x09, 0x96, 0xf7, 0x50, 0x6f, 0x23, 0x5d, 0x1d, 0x49, 0x70, 0x61, 0xa4, 0x77, 0x3c, 0x43, 0x9c, 0x25, 0xfb}
 
 func determineCompatibleLogs(cert *x509.Certificate, submissionRequest *SubmissionRequest, logList *loglist3.LogList) (*loglist3.LogList, error) {
-	// When CT policy compliance is required, ensure the certificate is unexpired.
-	if submissionRequest.PolicyCompliant && time.Now().After(cert.NotAfter) {
+	// When CT policy compliance is required (without test logs), ensure the certificate is unexpired.
+	if submissionRequest.PolicyCompliant && !submissionRequest.TestLogs && time.Now().After(cert.NotAfter) {
 		return nil, fmt.Errorf("Certificate is expired, but policy compliance is required")
 	}
 
