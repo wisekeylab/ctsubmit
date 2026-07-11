@@ -6,7 +6,7 @@ require (
 	filippo.io/sunlight v0.8.1
 	github.com/crtsh/ccadb_data v1.20260710.165940
 	github.com/crtsh/ctlint v0.0.0-20260707102530-367eb26ff739
-	github.com/crtsh/ctloglists v1.20260709.151707
+	github.com/crtsh/ctloglists v1.20260711.145240
 	github.com/goccy/go-json v0.10.6
 	github.com/google/certificate-transparency-go v1.3.3
 	github.com/prometheus/client_golang v1.23.2
