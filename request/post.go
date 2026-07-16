@@ -10,7 +10,6 @@ import (
 
 	"github.com/crtsh/ctsubmit/config"
 	"github.com/crtsh/ctsubmit/endpoint"
-	"github.com/crtsh/ctsubmit/health"
 	"github.com/crtsh/ctsubmit/logger"
 	"github.com/crtsh/ctsubmit/loglists"
 	"github.com/crtsh/ctsubmit/submitter"
@@ -36,6 +35,16 @@ var endpointRequestCounter = promauto.NewCounterVec(prometheus.CounterOpts{
 	Help:      "Total requests per submission endpoint, by result.",
 }, []string{"endpoint", "result"})
 
+type postResult struct {
+	apiEndpoint        endpoint.Endpoint
+	apiEndpointOK      bool
+	responseFormat     config.ResponseFormat
+	submissionResponse *submitter.SubmissionResponse
+	err                error
+	status             int
+	logMessage         string
+}
+
 func getResponseFormat(fhctx *fasthttp.RequestCtx) config.ResponseFormat {
 	if f := paramS(fhctx, "format"); f != "" {
 		return config.ParseResponseFormat(f)
@@ -52,60 +61,82 @@ func getResponseFormat(fhctx *fasthttp.RequestCtx) config.ResponseFormat {
 }
 
 func POST(fhctx *fasthttp.RequestCtx, path string) int {
-	status := fasthttp.StatusBadRequest
-
 	ctxWithDeadline, cancel := context.WithDeadline(context.Background(), fhctx.Time().Add(time.Duration(config.Config.Server.RequestTimeout)))
 	defer cancel()
 
-	doneChan := make(chan int, 1)
-	go func() {
+	result := postResult{
+		responseFormat: config.DefaultResponseFormat,
+		status:         fasthttp.StatusBadRequest,
+		logMessage:     "Submission Request",
+	}
+
+	var requestBody []byte
+	if apiEndpoint, ok := endpoint.CheckPOSTEndpoint(path); !ok {
+		result.status = fasthttp.StatusNotFound
+		result.err = fmt.Errorf("Invalid endpoint")
+		result.logMessage = "Invalid endpoint"
+	} else {
+		result.apiEndpoint = apiEndpoint
+		result.apiEndpointOK = true
+		if result.responseFormat = getResponseFormat(fhctx); result.responseFormat == -1 {
+			result.err = fmt.Errorf("Unrecognised response format")
+		} else if body := fhctx.Request.Body(); len(body) == 0 {
+			result.err = fmt.Errorf("Empty request body")
+		} else {
+			requestBody = append(requestBody, body...)
+		}
+	}
+
+	doneChan := make(chan postResult, 1)
+	go func(result postResult) {
+		if result.err != nil || !result.apiEndpointOK || len(requestBody) == 0 {
+			doneChan <- result
+			return
+		}
+
 		submissionRequest := submitter.NewSubmissionRequest()
-		var submissionResponse *submitter.SubmissionResponse
-		var err error
-		var responseFormat config.ResponseFormat
-		if apiEndpoint, ok := endpoint.CheckPOSTEndpoint(path); !ok {
-			status = fasthttp.StatusNotFound
-			logger.SetDetails(fhctx, zap.InfoLevel, "Invalid endpoint", nil, nil)
-		} else if responseFormat = getResponseFormat(fhctx); responseFormat == -1 {
-			err = fmt.Errorf("Unrecognised response format")
-		} else if requestBody := fhctx.Request.Body(); len(requestBody) == 0 {
-			err = fmt.Errorf("Empty request body")
-		} else if err = json.Unmarshal(requestBody, submissionRequest); err == nil {
-			submissionResponse, err = submitter.Handler(fhctx, ctxWithDeadline, apiEndpoint, submissionRequest)
-			if err == nil {
-				status = fasthttp.StatusOK
+		if result.err = json.Unmarshal(requestBody, submissionRequest); result.err == nil {
+			result.submissionResponse, result.err = submitter.Handler(ctxWithDeadline, result.apiEndpoint, submissionRequest)
+			if result.err == nil {
+				result.status = fasthttp.StatusOK
 			}
 		}
+		doneChan <- result
+	}(result)
 
-		if apiEndpoint, ok := endpoint.CheckPOSTEndpoint(path); ok {
-			result := "success"
-			if err != nil {
-				result = "error"
-			}
-			endpointRequestCounter.WithLabelValues(endpoint.APIEndpoint[apiEndpoint], result).Inc()
+	select {
+	case result = <-doneChan:
+	case <-ctxWithDeadline.Done():
+		return -1
+	}
+
+	if result.apiEndpointOK {
+		counterResult := "success"
+		if result.err != nil {
+			counterResult = "error"
 		}
+		endpointRequestCounter.WithLabelValues(endpoint.APIEndpoint[result.apiEndpoint], counterResult).Inc()
+	}
 
-		logger.SetDetails(fhctx, zap.InfoLevel, "Submission Request", err, nil)
+	logger.SetDetails(fhctx, zap.InfoLevel, result.logMessage, result.err, nil)
 
-		// Add Cross-Origin Resource Sharing (CORS) response header.
-		fhctx.Response.Header.Set("Access-Control-Allow-Origin", "*")
+	// Add Cross-Origin Resource Sharing (CORS) response header.
+	fhctx.Response.Header.Set("Access-Control-Allow-Origin", "*")
 
-		// Send response.
-		switch responseFormat {
-		case config.RESPONSEFORMAT_HTML:
-			status = sendHTMLResponse(fhctx, submissionResponse, err)
-		case config.RESPONSEFORMAT_JSON:
-			if err == nil {
-				status = sendJSONResponse(fhctx, submissionResponse)
-			} else {
-				status = sendJSONProblem(fhctx, status, err)
-			}
+	// Send response.
+	switch result.responseFormat {
+	case config.RESPONSEFORMAT_HTML:
+		result.status = sendHTMLResponse(fhctx, result.submissionResponse, result.err)
+	case config.RESPONSEFORMAT_JSON:
+		if result.err == nil {
+			result.status = sendJSONResponse(fhctx, result.submissionResponse)
+		} else {
+			result.status = sendJSONProblem(fhctx, result.status, result.err)
 		}
-		fhctx.SetStatusCode(status)
-		doneChan <- 0
-	}()
+	}
 
-	return health.CompleteRequest(ctxWithDeadline, doneChan)
+	fhctx.SetStatusCode(result.status)
+	return result.status
 }
 
 func paramS(fhctx *fasthttp.RequestCtx, name string) string {
