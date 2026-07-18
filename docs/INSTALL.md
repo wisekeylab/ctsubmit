@@ -122,6 +122,11 @@ response:
   defaultFormat: json           # Default response format: "json" or "html".
   jsonPrettyPrint: false        # Pretty-print JSON responses.
 
+customStaticTestLogs:
+  enabled: false                # Enable additional Static CT test logs from local config.
+  includeWithPublicTestLogs: true
+  logs: []
+
 logging:
   isDevelopment: false          # Enable development mode logging.
   level: ""                     # Log level (debug, info, warn, error, dpanic, panic, fatal).
@@ -187,6 +192,33 @@ logging:
 |---|---|---|
 | `response.defaultFormat` | `json` | Default response format (`json` or `html`). |
 | `response.jsonPrettyPrint` | `false` | Pretty-print JSON responses. |
+
+#### Custom Static Test Logs
+
+| Option | Default | Description |
+|---|---|---|
+| `customStaticTestLogs.enabled` | `false` | Load additional Static CT test logs from local configuration. Intended for test deployments only. |
+| `customStaticTestLogs.includeWithPublicTestLogs` | `true` | Append custom static test logs to the normal test TLS log list used when requests set `testLogs: true`. |
+| `customStaticTestLogs.logs` | `[]` | List of custom static test logs. Each entry requires `operator`, `name`, `submissionURL`, `monitoringURL`, `checkpointOrigin`, `mmd`, `publicKeyFile`, and `acceptedRootsDir`. |
+
+Example:
+
+```yaml
+customStaticTestLogs:
+  enabled: true
+  includeWithPublicTestLogs: true
+  logs:
+    - operator: "Example Internal"
+      name: "Example Static Test Log"
+      submissionURL: "https://ctlog-test.example.com/"
+      monitoringURL: "https://ctlog-test.example.com/"
+      checkpointOrigin: "ctlog-test.example.com"
+      mmd: 86400
+      publicKeyFile: "/config/static-logs/example-log-public-key.pem"
+      acceptedRootsDir: "/config/static-logs/example-log-roots/"
+```
+
+When enabled, these logs are only added to the test TLS log list. Clients must submit with `testLogs: true` to use them.
 
 #### Logging
 

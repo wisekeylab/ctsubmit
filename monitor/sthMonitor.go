@@ -13,11 +13,11 @@ import (
 
 	"github.com/crtsh/ctsubmit/config"
 	"github.com/crtsh/ctsubmit/logger"
+	"github.com/crtsh/ctsubmit/loglists"
 	"github.com/crtsh/ctsubmit/utils"
 
 	"filippo.io/sunlight"
 
-	"github.com/crtsh/ctloglists"
 	json "github.com/goccy/go-json"
 	ctgo "github.com/google/certificate-transparency-go"
 
@@ -44,7 +44,7 @@ var (
 )
 
 func init() {
-	for _, operator := range ctloglists.CrtshV3Active.Operators {
+	for _, operator := range loglists.LogsForMonitoring().Operators {
 		for _, log := range operator.Logs {
 			pubKey, err := x509.ParsePKIXPublicKey(log.Key)
 			if err != nil {
@@ -72,6 +72,9 @@ func init() {
 			}
 
 			keyName := strings.TrimRight(strings.TrimPrefix(tiledLog.SubmissionURL, "https://"), "/")
+			if customCheckpoint, ok := loglists.CustomCheckpoint(monitoringURL); ok {
+				keyName = customCheckpoint.KeyName
+			}
 			verifier, err := sunlight.NewRFC6962Verifier(keyName, pubKey)
 			if err != nil {
 				logger.Logger.Error("Failed to create static log checkpoint verifier", zap.String("url", monitoringURL), zap.ByteString("key", tiledLog.Key), zap.Error(err))
