@@ -10,8 +10,7 @@ import (
 
 	"github.com/crtsh/ctsubmit/config"
 	"github.com/crtsh/ctsubmit/logger"
-
-	"github.com/crtsh/ctloglists"
+	"github.com/crtsh/ctsubmit/loglists"
 
 	"go.uber.org/zap"
 )
@@ -36,7 +35,7 @@ var (
 )
 
 func init() {
-	for _, operator := range ctloglists.CrtshV3Active.Operators {
+	for _, operator := range loglists.LogsForMonitoring().Operators {
 		for _, log := range operator.Logs {
 			submissionURL, _ := url.JoinPath(log.URL, "/")
 			backoffBadResponse[submissionURL] = &backoffEntry{}

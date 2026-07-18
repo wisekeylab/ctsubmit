@@ -13,6 +13,7 @@ import (
 
 	"github.com/crtsh/ctsubmit/config"
 	"github.com/crtsh/ctsubmit/logger"
+	"github.com/crtsh/ctsubmit/loglists"
 	"github.com/crtsh/ctsubmit/monitor"
 	"github.com/crtsh/ctsubmit/utils"
 
@@ -197,7 +198,13 @@ func processHTTPResponse(strategyIdx int, submissionURL string, resp *http.Respo
 }
 
 func verifySCTSignature(sct *ctgo.SignedCertificateTimestamp, sha256IssuerSPKI *[sha256.Size]byte, entryType ctgo.LogEntryType, entryData []byte) error {
-	sv := ctloglists.LogSignatureVerifierMap[([sha256.Size]byte)(sct.LogID.KeyID)]
+	logID := ([sha256.Size]byte)(sct.LogID.KeyID)
+	sv := ctloglists.LogSignatureVerifierMap[logID]
+	if sv == nil {
+		if customVerifier, ok := loglists.CustomSCTVerifier(logID); ok {
+			sv = customVerifier
+		}
+	}
 	if sv == nil {
 		return fmt.Errorf("SCT is from an unknown log")
 	}
