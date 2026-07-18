@@ -40,6 +40,7 @@ func init() {
 	determineActiveTLSLogs()
 	determineTestTLSLogs()
 	determineUsableBIMILogs()
+	loadCustomStaticTestLogs()
 
 	// Use the github.com/crtsh/ctloglists release version timestamp as the log lists' timestamp.
 	if logListTimestamp, err := getCtloglistsReleaseTimestamp(); err == nil {

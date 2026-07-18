@@ -79,6 +79,20 @@ type config struct {
 		SamplingThereafter   int    `mapstructure:"samplingThereafter"`
 		XFFUseFirstIPAddress bool   `mapstructure:"xffUseFirstIPAddress"`
 	}
+	CustomStaticTestLogs struct {
+		Enabled                   bool `mapstructure:"enabled"`
+		IncludeWithPublicTestLogs bool `mapstructure:"includeWithPublicTestLogs"`
+		Logs                      []struct {
+			Operator         string `mapstructure:"operator"`
+			Name             string `mapstructure:"name"`
+			SubmissionURL    string `mapstructure:"submissionURL"`
+			MonitoringURL    string `mapstructure:"monitoringURL"`
+			CheckpointOrigin string `mapstructure:"checkpointOrigin"`
+			MMD              int32  `mapstructure:"mmd"`
+			PublicKeyFile    string `mapstructure:"publicKeyFile"`
+			AcceptedRootsDir string `mapstructure:"acceptedRootsDir"`
+		} `mapstructure:"logs"`
+	}
 }
 
 type ResponseFormat int
@@ -248,6 +262,9 @@ func initViper() error {
 	viper.SetDefault("logging.samplingInitial", math.MaxInt)    // When both of these are set to MaxInt, sampling is disabled.
 	viper.SetDefault("logging.samplingThereafter", math.MaxInt) // See https://pkg.go.dev/go.uber.org/zap/zapcore#NewSamplerWithOptions for more information.
 	viper.SetDefault("logging.xffUseFirstIPAddress", false)
+	viper.SetDefault("customStaticTestLogs.enabled", false)
+	viper.SetDefault("customStaticTestLogs.includeWithPublicTestLogs", true)
+	viper.SetDefault("customStaticTestLogs.logs", []map[string]any{})
 
 	// Render results to Config Struct.
 	_ = viper.ReadInConfig() // Ignore errors, because we also support reading config from environment variables.

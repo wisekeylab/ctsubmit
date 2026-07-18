@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/crtsh/ctloglists"
+	"github.com/crtsh/ctsubmit/loglists"
 	"github.com/google/certificate-transparency-go/loglist3"
 	"github.com/google/certificate-transparency-go/trillian/ctfe"
 )
@@ -21,6 +22,14 @@ func init() {
 	logValidateChainCacheMap = make(map[[sha256.Size]byte]ValidateChainCacheMap)
 	for logID := range ctloglists.LogAcceptedRootsMap {
 		logValidateChainCacheMap[logID] = make(ValidateChainCacheMap)
+	}
+	for _, operator := range loglists.TestTLSLogs.Operators {
+		for _, tiledLog := range operator.TiledLogs {
+			keyID := logIDFromBytes(tiledLog.LogID)
+			if _, ok := loglists.CustomAcceptedRoots(keyID); ok {
+				logValidateChainCacheMap[keyID] = make(ValidateChainCacheMap)
+			}
+		}
 	}
 }
 
@@ -73,6 +82,12 @@ func cacheValidateChainResult(logID, chainSHA256 [sha256.Size]byte, chainIsValid
 	validateChainCacheMap[chainSHA256] = chainIsValid
 }
 
+func logIDFromBytes(logID []byte) [sha256.Size]byte {
+	var keyID [sha256.Size]byte
+	copy(keyID[:], logID)
+	return keyID
+}
+
 func ValidateChain(logID [sha256.Size]byte, submittedChain [][]byte, logTemporalInterval *loglist3.TemporalInterval) bool {
 	var chainSHA256 [sha256.Size]byte
 	var chainIsValid, ok bool
@@ -92,6 +107,18 @@ func ValidateChain(logID [sha256.Size]byte, submittedChain [][]byte, logTemporal
 				end = &logTemporalInterval.EndExclusive
 			}
 			cvo := ctfe.NewCertValidationOpts(ctloglists.AcceptedRootsMap[ll], time.Now(), false, false, start, end, false, nil)
+			_, err := ctfe.ValidateChain(submittedChain, cvo)
+			chainIsValid = (err == nil)
+			if len(submittedChain) > 1 {
+				cacheValidateChainResult(logID, chainSHA256, chainIsValid)
+			}
+		} else if roots, ok2 := loglists.CustomAcceptedRoots(logID); ok2 {
+			var start, end *time.Time
+			if logTemporalInterval != nil {
+				start = &logTemporalInterval.StartInclusive
+				end = &logTemporalInterval.EndExclusive
+			}
+			cvo := ctfe.NewCertValidationOpts(roots, time.Now(), false, false, start, end, false, nil)
 			_, err := ctfe.ValidateChain(submittedChain, cvo)
 			chainIsValid = (err == nil)
 			if len(submittedChain) > 1 {
