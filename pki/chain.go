@@ -3,6 +3,7 @@ package pki
 import (
 	"bytes"
 	"crypto/sha256"
+	"sync"
 	"time"
 
 	"github.com/crtsh/ctloglists"
@@ -13,6 +14,7 @@ import (
 type ValidateChainCacheMap map[[sha256.Size]byte]bool
 
 var logValidateChainCacheMap map[[sha256.Size]byte]ValidateChainCacheMap
+var logValidateChainCacheMutex sync.RWMutex
 
 func init() {
 	logValidateChainCacheMap = make(map[[sha256.Size]byte]ValidateChainCacheMap)
@@ -21,16 +23,37 @@ func init() {
 	}
 }
 
+func cachedValidateChainResult(logID, chainSHA256 [sha256.Size]byte) (bool, bool) {
+	logValidateChainCacheMutex.RLock()
+	defer logValidateChainCacheMutex.RUnlock()
+
+	validateChainCacheMap, ok := logValidateChainCacheMap[logID]
+	if !ok {
+		return false, false
+	}
+	chainIsValid, ok := validateChainCacheMap[chainSHA256]
+	return chainIsValid, ok
+}
+
+func cacheValidateChainResult(logID, chainSHA256 [sha256.Size]byte, chainIsValid bool) {
+	logValidateChainCacheMutex.Lock()
+	defer logValidateChainCacheMutex.Unlock()
+
+	validateChainCacheMap, ok := logValidateChainCacheMap[logID]
+	if !ok {
+		return
+	}
+	validateChainCacheMap[chainSHA256] = chainIsValid
+}
+
 func ValidateChain(logID [sha256.Size]byte, submittedChain [][]byte, logTemporalInterval *loglist3.TemporalInterval) bool {
-	var validateChainCacheMap map[[sha256.Size]byte]bool
 	var chainSHA256 [sha256.Size]byte
 	var chainIsValid, ok bool
 
 	if len(submittedChain) > 1 { // Don't use the cache when there's no chain.
 		// Check if ValidateChain has already been called for this chain of CA certificates / this log.
-		validateChainCacheMap = logValidateChainCacheMap[logID]
 		chainSHA256 = sha256.Sum256(bytes.Join(submittedChain[1:], nil))
-		chainIsValid, ok = validateChainCacheMap[chainSHA256]
+		chainIsValid, ok = cachedValidateChainResult(logID, chainSHA256)
 	}
 
 	if !ok { // Cache miss or not used.
@@ -45,7 +68,7 @@ func ValidateChain(logID [sha256.Size]byte, submittedChain [][]byte, logTemporal
 			_, err := ctfe.ValidateChain(submittedChain, cvo)
 			chainIsValid = (err == nil)
 			if len(submittedChain) > 1 {
-				validateChainCacheMap[chainSHA256] = chainIsValid
+				cacheValidateChainResult(logID, chainSHA256, chainIsValid)
 			}
 		}
 	}
