@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	filippo.io/sunlight v0.8.1
-	github.com/crtsh/ccadb_data v1.20260722.192631
+	github.com/crtsh/ccadb_data v1.20260723.63350
 	github.com/crtsh/ctlint v0.0.0-20260722191317-496caa66fbbe
 	github.com/crtsh/ctloglists v1.20260721.134823
 	github.com/goccy/go-json v0.10.6
